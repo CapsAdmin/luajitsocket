@@ -148,6 +148,16 @@ if jit.os == "Windows" then
         };
         int WSAPoll(struct pollfd *fds, unsigned long int nfds, int timeout);
 
+        uint32_t GetLastError();
+        uint32_t FormatMessageA(
+            uint32_t dwFlags,
+            const void* lpSource,
+            uint32_t dwMessageId,
+            uint32_t dwLanguageId,
+            char* lpBuffer,
+            uint32_t nSize,
+            va_list *Arguments
+        );
     ]])
 
     M.INVALID_SOCKET = ffi.new("SOCKET", -1)
