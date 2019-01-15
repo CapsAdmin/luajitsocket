@@ -6,6 +6,7 @@ do -- server
     local server = assert(luanet.socket("inet", "dgram", "udp"))
     assert(server:set_blocking(false))
     assert(server:bind(address))
+    print("hosting at ", address:get_ip(), address:get_port())
 
     function update_server()
         local data, addr = server:receive_from()
@@ -33,7 +34,7 @@ do -- client
         local data, addr = client:receive_from(address)
 
         if data then
-            print(data, addr)
+            print(data, addr:get_ip(), addr:get_port())
         elseif addr ~= "timeout" then
             error(addr)
         end

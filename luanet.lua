@@ -48,6 +48,14 @@ do
         struct in_addr {
             uint32_t s_addr;
         };
+
+        struct in6_addr {
+            union {
+                uint8_t u6_addr8[16];
+                uint16_t u6_addr16[8];
+                uint32_t u6_addr32[4];
+            } u6_addr;
+        };
     ]]
 
     -- https://www.cs.dartmouth.edu/~sergey/cs60/on-sockaddr-structs.txt
@@ -59,12 +67,22 @@ do
                 uint8_t sa_family;
                 char sa_data[14];
             };
+
             struct sockaddr_in {
                 uint8_t sin_len;
                 uint8_t sin_family;
                 uint16_t sin_port;
                 struct in_addr sin_addr;
                 char sin_zero[8];
+            };
+
+            struct sockaddr_in6 {
+                uint8_t sin6_len;
+                uint8_t sin6_family;
+                uint16_t sin6_port;
+                uint32_t sin6_flowinfo;
+                struct in6_addr sin6_addr;
+                uint32_t sin6_scope_id;
             };
         ]]
     elseif ffi.os == "Windows" then
@@ -80,6 +98,14 @@ do
                 struct in_addr sin_addr;
                 uint8_t sin_zero[8];
             };
+
+            struct sockaddr_in6 {
+                int16_t sin6_family;
+                uint16_t sin6_port;
+                uint32_t sin6_flowinfo;
+                struct in6_addr sin6_addr;
+                uint32_t sin6_scope_id;
+            };
         ]]
     else -- posix
         ffi.cdef[[
@@ -87,11 +113,20 @@ do
                 uint16_t sa_family;
                 char sa_data[14];
             };
+
             struct sockaddr_in {
                 uint16_t sin_family;
                 uint16_t sin_port;
                 struct in_addr sin_addr;
                 char sin_zero[8];
+            };
+
+            struct sockaddr_in6 {
+                uint16_t sin6_family;
+                uint16_t sin6_port;
+                uint32_t sin6_flowinfo;
+                struct in6_addr sin6_addr;
+                uint32_t sin6_scope_id;
             };
         ]]
     end
@@ -752,11 +787,24 @@ function M.poll(socket, flags, timeout)
     return flags_to_table(pfd[0].revents, POLL.lookup, bit.bor), ok
 end
 
+local function addrinfo_get_ip(self)
+    local str = ffi.new("char[256]")
+    local addr = assert(socket.inet_ntop(AF.lookup[self.family], self.addrinfo.ai_addr.sa_data, str, ffi.sizeof(str)))
+    return ffi.string(addr)
+end
+
+local function addrinfo_get_port(self)
+    if self.family == "inet" then
+        return ffi.cast("struct sockaddr_in*", self.addrinfo.ai_addr).sin_port
+    elseif self.family == "inet6" then
+        return ffi.cast("struct sockaddr_in6*", self.addrinfo.ai_addr).sin6_port
+    end
+
+    return nil, "unknown family " .. tostring(self.family)
+end
+
 local function addrinfo_to_table(res, host, service)
     local info = {}
-
-    local str = ffi.new("char[256]")
-    local addr = assert(socket.inet_ntop(res.ai_family, res.ai_addr.sa_data, str, ffi.sizeof(str)))
 
     if res.ai_canonname ~= nil then
         info.canonical_name = ffi.string(res.ai_canonname)
@@ -764,13 +812,13 @@ local function addrinfo_to_table(res, host, service)
 
     info.host = host ~= "*" and host or nil
     info.service = service
-    info.ip = ffi.string(addr)
-
     info.family = AF.reverse[res.ai_family]
     info.socket_type = SOCK.reverse[res.ai_socktype]
     info.protocol = IPPROTO.reverse[res.ai_protocol]
     info.flags = flags_to_table(res.ai_flags, AI.lookup, bit.band)
     info.addrinfo = res
+    info.get_ip = addrinfo_get_ip
+    info.get_port = addrinfo_get_port
 
     return info
 end
@@ -1120,7 +1168,10 @@ do
                     addrinfo = {
                         ai_addr = ffi.cast("struct sockaddr *", src_address),
                         ai_addrlen = len_res[0],
-                    }
+                    },
+                    family = self.family,
+                    get_port = addrinfo_get_port,
+                    get_ip = addrinfo_get_ip,
                 }
             end
 
