@@ -1,6 +1,6 @@
-local luanet = require("luanet")
+local socket = require("ljsocket")
 
-for _, info in ipairs(assert(luanet.get_address_info({host = "www.google.com"}))) do
+for _, info in ipairs(assert(socket.get_address_info({host = "www.google.com"}))) do
     print("================================")
     print("host: ", info.host)
     print("service: ", info.service)

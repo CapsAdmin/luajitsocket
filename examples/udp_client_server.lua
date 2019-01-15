@@ -1,9 +1,9 @@
-local luanet = require("luanet")
+local socket = require("ljsocket")
 local port = 8080
-local address = luanet.find_first_address("*", port)
+local address = socket.find_first_address("*", port)
 
 do -- server
-    local server = assert(luanet.socket("inet", "dgram", "udp"))
+    local server = assert(socket.socket("inet", "dgram", "udp"))
     assert(server:set_blocking(false))
     assert(server:bind(address))
     print("hosting at ", address:get_ip(), address:get_port())
@@ -21,7 +21,7 @@ do -- server
 end
 
 do -- client
-    local client = assert(luanet.socket("inet", "dgram", "udp"))
+    local client = assert(socket.socket("inet", "dgram", "udp"))
     assert(client:set_blocking(false))
     local next_send = 0
 

@@ -1,4 +1,4 @@
-local luanet = require("luanet")
+local socket = require("ljsocket")
 
 print("goto http://127.0.0.1:5001")
 
@@ -6,7 +6,7 @@ do -- server
     local host = nil
     local port = 5001
 
-    local info = assert(luanet.find_first_address("*", port, {
+    local info = assert(socket.find_first_address("*", port, {
         family = "inet",
         type = "stream",
         protocol = "tcp",
@@ -14,7 +14,7 @@ do -- server
     }))
 
     -- Create a SOCKET for connecting to server
-    local server = assert(luanet.socket(info.family, info.socket_type, info.protocol))
+    local server = assert(socket.socket(info.family, info.socket_type, info.protocol))
     server:set_option("reuseaddr", 1)
 
     assert(server:bind(info))
