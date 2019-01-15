@@ -1,10 +1,10 @@
 local bsocket = require("bsocket")
-local socket = bsocket.socket("inet", "stream", "tcp")
-socket:set_blocking(false)
 
 local host = "www.freebsd.no"
 
-socket:connect(host, "http")
+local socket = assert(bsocket.socket("inet", "stream", "tcp"))
+assert(socket:set_blocking(false))
+assert(socket:connect(host, "http"))
 
 while true do
     if socket:is_connected() then
