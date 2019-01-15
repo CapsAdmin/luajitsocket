@@ -247,7 +247,8 @@ if jit.os == "Windows" then
             ffi.copy(srcaddr.sin_addr, pAddr, ffi.sizeof(srcaddr.sin_addr))
             srcaddr.sin_family = family
             local len = ffi.new("unsigned long[1]", strlen)
-            return C.WSAAddressToStringA(ffi.cast("struct sockaddr *", srcaddr), ffi.sizeof(srcaddr), nil, strptr, len)
+            C.WSAAddressToStringA(ffi.cast("struct sockaddr *", srcaddr), ffi.sizeof(srcaddr), nil, strptr, len)
+            return strptr
         end
     end
 
