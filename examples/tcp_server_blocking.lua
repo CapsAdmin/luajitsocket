@@ -48,12 +48,9 @@ do -- server
             if str then
                 print(str)
                 client:close()
-            elseif not bsocket.wouldblock() then
+            elseif err == "closed" then
                 client:close()
-                error(bsocket.lasterror())
             end
-        elseif err ~= "Resource temporarily unavailable" then
-            error(err)
         end
     end
 end
