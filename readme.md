@@ -1,6 +1,6 @@
 WIP
 
-Unix sockets for luajit using ffi. Slightly resembles luasocket, but it's a bit more low level.
+Slightly resembles luasocket's core module, but it's a bit more low level.
 
 `luajit examples/tcp_client_blocking_tls.lua`
 
