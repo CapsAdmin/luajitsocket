@@ -651,7 +651,6 @@ if jit.os == "Windows" then
     M.e.POLLRDNORM = 256
     M.e.SO_DONTROUTE = 16
     M.e.SO_RCVLOWAT = 4100
-    }
 end
 
 return M
