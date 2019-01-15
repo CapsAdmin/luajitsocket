@@ -245,10 +245,6 @@ do
             end
         end
 
-        function socket.wouldblock()
-            return ffi.C.GetLastError() == 10035
-        end
-
         generic_function("closesocket", "int closesocket(SOCKET s);", "close")
 
         do
@@ -338,11 +334,6 @@ do
             end
         end
 
-        function socket.wouldblock()
-            local err = ffi.errno()
-            return err == 11 or err == 115 or err == 114
-        end
-
         function socket.poll(fds, ndfs, timeout)
             local ret = C.poll(fds, ndfs, timeout)
             if ret < 0 then
@@ -355,7 +346,7 @@ do
 
     ffi.cdef[[
         char *strerror(int errnum);
-        int getaddrinfo(char const *node, char const *service, struct addrinfo const *hints, struct addrinfo **res);
+        int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
         int getnameinfo(const struct sockaddr* sa, uint32_t salen, char* host, size_t hostlen, char* serv, size_t servlen, int flags);
         void freeaddrinfo(struct addrinfo *ai);
         const char *gai_strerror(int errcode);
@@ -418,6 +409,7 @@ do
 
     generic_function("listen", "int listen(SOCKET s, int backlog);")
     generic_function("recv", "int recv(SOCKET s, char* buf, int len, int flags);", nil, true)
+    generic_function("recvfrom", "int recvfrom(SOCKET s, char* buf, int len, int flags, struct sockaddr *src_addr, unsigned int *addrlen);", nil, true)
 
     generic_function("send", "int send(SOCKET s, const char* buf, int len, int flags);", nil, true)
     generic_function("sendto", "int sendto(SOCKET s, const char* buf, int len, int flags, const struct sockaddr* to, int tolen);", nil, true)
@@ -1045,14 +1037,24 @@ do
         default_flags = e.MSG_NOSIGNAL
     end
 
-    function meta:send(data, flags)
+    function meta:send_to(addr, data, flags)
+        return self:send(data, flags, addr)
+    end
+
+    function meta:send(data, flags, addr)
         flags = flags or default_flags
 
         if self.on_send then
             return self:on_send(data, flags)
         end
 
-        local len, err = socket.send(self.fd, data, #data, flags)
+        local len, err
+
+        if addr then
+            len, err = socket.sendto(self.fd, data, #data, flags, addr.addrinfo.ai_addr, addr.addrinfo.ai_addrlen)
+        else
+            len, err = socket.send(self.fd, data, #data, flags)
+        end
 
         if not len then
             return len, err
@@ -1063,7 +1065,22 @@ do
         end
     end
 
-    function meta:receive(size, flags)
+    function meta:receive_from(address, size, flags)
+        local src_addr
+        local src_addr_size
+
+        if not address then
+            src_addr = ffi.new("struct sockaddr_in[1]")
+            src_addr_size = ffi.sizeof("struct sockaddr_in")
+        else
+            src_addr = address.addrinfo.ai_addr
+            src_addr_size = address.addrinfo.ai_addrlen
+        end
+
+        return self:receive(size, flags, src_addr, src_addr_size)
+    end
+
+    function meta:receive(size, flags, src_address, address_len)
         size = size or 64000
         local buff = ffi.new("char[?]", size)
 
@@ -1071,7 +1088,15 @@ do
             return self:on_receive(buff, size, flags)
         end
 
-        local len, err = socket.recv(self.fd, buff, ffi.sizeof(buff), flags or 0)
+        local len, err
+        local len_res
+
+        if src_address then
+            len_res = ffi.new("int[1]", address_len)
+            len, err = socket.recvfrom(self.fd, buff, ffi.sizeof(buff), flags or 0, ffi.cast("struct sockaddr *", src_address), len_res)
+        else
+            len, err = socket.recv(self.fd, buff, ffi.sizeof(buff), flags or 0)
+        end
 
         if not len then
             if not self.blocking and timeout_messages[err] then
@@ -1089,6 +1114,16 @@ do
             if self.debug then
                 print(tostring(self), ": received ", len, " bytes")
             end
+
+            if src_address then
+                return ffi.string(buff, len), {
+                    addrinfo = {
+                        ai_addr = ffi.cast("struct sockaddr *", src_address),
+                        ai_addrlen = len_res[0],
+                    }
+                }
+            end
+
             return ffi.string(buff, len)
         end
 
