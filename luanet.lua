@@ -5,7 +5,7 @@ local e = {}
 do
     local C
 
-    if jit.os == "Windows" then
+    if ffi.os == "Windows" then
         C = assert(ffi.load("ws2_32"))
     else
         C = ffi.C
@@ -45,23 +45,62 @@ do
     end
 
     ffi.cdef[[
-        struct sockaddr {
-            unsigned short sa_family;
-            char sa_data[14];
-        };
-
         struct in_addr {
             uint32_t s_addr;
         };
-
     ]]
 
-    if jit.os == "Windows" then
+    -- https://www.cs.dartmouth.edu/~sergey/cs60/on-sockaddr-structs.txt
+
+    if ffi.os == "OSX" then
+        ffi.cdef[[
+            struct sockaddr {
+                uint8_t sa_len;
+                uint8_t sa_family;
+                char sa_data[14];
+            };
+            struct sockaddr_in {
+                uint8_t sin_len;
+                uint8_t sin_family;
+                uint16_t sin_port;
+                struct in_addr sin_addr;
+                char sin_zero[8];
+            };
+        ]]
+    elseif ffi.os == "Windows" then
+        ffi.cdef[[
+            struct sockaddr {
+                uint16_t sa_family;
+                char sa_data[14];
+            };
+
+            struct sockaddr_in {
+                int16_t sin_family;
+                uint16_t sin_port;
+                struct in_addr sin_addr;
+                uint8_t sin_zero[8];
+            };
+        ]]
+    else -- posix
+        ffi.cdef[[
+            struct sockaddr {
+                uint16_t sa_family;
+                char sa_data[14];
+            };
+            struct sockaddr_in {
+                uint16_t sin_family;
+                uint16_t sin_port;
+                struct in_addr sin_addr;
+                char sin_zero[8];
+            };
+        ]]
+    end
+
+    if ffi.os == "Windows" then
         ffi.cdef[[
             typedef uint64_t SOCKET;
 
-            struct addrinfo
-            {
+            struct addrinfo {
                 int ai_flags;
                 int ai_family;
                 int ai_socktype;
@@ -71,13 +110,31 @@ do
                 struct sockaddr *ai_addr;
                 struct addrinfo *ai_next;
             };
+        ]]
+        socket.INVALID_SOCKET = ffi.new("SOCKET", -1)
+    else -- posix
+        ffi.cdef[[
+            typedef int32_t SOCKET;
 
-            struct sockaddr_in {
-                int16_t sin_family;
-                uint16_t sin_port;
-                struct in_addr sin_addr;
-                uint8_t sin_zero[8];
+            struct addrinfo {
+                int ai_flags;
+                int ai_family;
+                int ai_socktype;
+                int ai_protocol;
+                uint32_t ai_addrlen;
+                struct sockaddr *ai_addr;
+                char *ai_canonname;
+                struct addrinfo *ai_next;
             };
+        ]]
+        socket.INVALID_SOCKET = -1
+    end
+
+    assert(ffi.sizeof("struct sockaddr") == 16)
+    assert(ffi.sizeof("struct sockaddr_in") == 16)
+
+    if ffi.os == "Windows" then
+        ffi.cdef[[
 
             struct pollfd {
                 SOCKET fd;
@@ -97,8 +154,6 @@ do
                 va_list *Arguments
             );
         ]]
-
-        socket.INVALID_SOCKET = ffi.new("SOCKET", -1)
 
         local function WORD(low, high)
             return bit.bor(low , bit.lshift(high , 8))
@@ -226,27 +281,6 @@ do
         end
     else
         ffi.cdef[[
-            typedef int SOCKET;
-
-            struct addrinfo {
-                int ai_flags;
-                int ai_family;
-                int ai_socktype;
-                int ai_protocol;
-                unsigned int ai_addrlen;
-                struct sockaddr *ai_addr;
-                char *ai_canonname;
-                struct addrinfo *ai_next;
-            };
-
-            struct sockaddr_in {
-                uint8_t sin_len;
-                unsigned short sin_family;
-                uint16_t sin_port;
-                struct in_addr sin_addr;
-                char sin_zero[8];
-            };
-
             struct pollfd {
                 SOCKET fd;
                 short events;
@@ -255,8 +289,6 @@ do
 
             int poll(struct pollfd *fds, unsigned long nfds, int timeout);
         ]]
-
-        socket.INVALID_SOCKET = -1
 
         do
             local cache = {}
@@ -597,7 +629,7 @@ do
         MSG_CMSG_CLOEXEC = 0x40000000,
     }
 
-    if jit.os == "Windows" then
+    if ffi.os == "Windows" then
         e.SO_SNDLOWAT = 4099
         e.SO_REUSEADDR = 4
         e.SO_KEEPALIVE = 8
@@ -971,7 +1003,7 @@ do
         return nil, err
     end
 
-    if jit.os == "Windows" then
+    if ffi.os == "Windows" then
         function meta:is_connected()
             local ip, service = self:get_peer_name()
             local ip2, service2 = self:get_name()
@@ -1009,7 +1041,7 @@ do
 
     local default_flags = 0
 
-    if jit.os ~= "Windows" then
+    if ffi.os ~= "Windows" then
         default_flags = e.MSG_NOSIGNAL
     end
 
