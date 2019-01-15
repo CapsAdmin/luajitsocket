@@ -773,6 +773,7 @@ local M = {}
 
 local timeout_messages = {}
 
+timeout_messages["Operation now in progress"] = true
 timeout_messages["Resource temporarily unavailable"] = true
 timeout_messages["A non-blocking socket operation could not be completed immediately."] = true
 
