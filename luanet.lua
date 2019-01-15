@@ -964,7 +964,7 @@ do
 
         local ok, err = socket.connect(self.fd, res.addrinfo.ai_addr, res.addrinfo.ai_addrlen)
 
-        if not ok and (not self.blocking and err ~= "Operation now in progress") then
+        if not ok and (not self.blocking and not timeout_messages[err]) then
             return ok, err
         end
 
