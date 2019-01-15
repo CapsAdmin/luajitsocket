@@ -2,7 +2,7 @@ local socket = require("ljsocket")
 
 local host = "www.freebsd.no"
 
-local socket = assert(socket.socket("inet", "stream", "tcp"))
+local socket = assert(socket.create("inet", "stream", "tcp"))
 assert(socket:set_blocking(false))
 assert(socket:connect(host, "http"))
 

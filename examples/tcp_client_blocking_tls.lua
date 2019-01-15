@@ -1,7 +1,7 @@
 local SSL = require("tls")
 local socket = require("ljsocket")
 local host = "github.com"
-local socket = assert(socket.socket("inet", "stream", "tcp"))
+local socket = assert(socket.create("inet", "stream", "tcp"))
 
 do
     local ffi = require("ffi")

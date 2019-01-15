@@ -5,7 +5,7 @@ print("goto http://127.0.0.1:5001")
 do -- server
     local info = socket.find_first_address("*", 5001)
 
-    local server = assert(socket.socket(info.family, info.socket_type, info.protocol))
+    local server = assert(socket.create(info.family, info.socket_type, info.protocol))
     server:set_blocking(false)
     assert(server:set_option("nodelay", true, "tcp"))
     assert(server:set_option("reuseaddr", true))

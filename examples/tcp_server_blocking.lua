@@ -14,7 +14,7 @@ do -- server
     }))
 
     -- Create a SOCKET for connecting to server
-    local server = assert(socket.socket(info.family, info.socket_type, info.protocol))
+    local server = assert(socket.create(info.family, info.socket_type, info.protocol))
     server:set_option("reuseaddr", 1)
 
     assert(server:bind(info))

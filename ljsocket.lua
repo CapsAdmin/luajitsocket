@@ -897,7 +897,7 @@ do
         return string.format("socket[%s-%s-%s][%s]", self.family, self.socket_type, self.protocol, self.fd)
     end
 
-    function M.socket(family, socket_type, protocol)
+    function M.create(family, socket_type, protocol)
         local fd, err = socket.create(AF.strict_lookup(family), SOCK.strict_lookup(socket_type), IPPROTO.strict_lookup(protocol))
 
         if not fd then return fd, err end
@@ -1199,7 +1199,7 @@ function M.bind(host, service)
         return info, err
     end
 
-    local server, err = M.socket(info.family, info.socket_type, info.protocol)
+    local server, err = M.create(info.family, info.socket_type, info.protocol)
 
     if not server then
         return server, err
