@@ -6,14 +6,12 @@ do -- server
     local host = nil
     local port = 5001
 
-    local info = assert(bsocket.get_address_info({
-        host = nil,
-        service = tostring(port),
+    local info = assert(bsocket.find_first_address("*", port, {
         family = "inet",
         type = "stream",
         protocol = "tcp",
         flags = {"passive"}, -- fill in ip
-    }))[1]
+    }))
 
     -- Create a SOCKET for connecting to server
     local server = assert(bsocket.socket(info.family, info.socket_type, info.protocol))
