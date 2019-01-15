@@ -41,6 +41,8 @@ do -- server
             if str then
                 print(str)
                 client:close()
+            elseif err == "closed" then
+                client:close()
             elseif err ~= "timeout" then
                 error(err)
             end
