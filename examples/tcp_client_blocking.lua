@@ -1,8 +1,8 @@
-local bsocket = require("bsocket")
+local luanet = require("luanet")
 
 local host = "www.freebsd.no"
 
-local socket = assert(bsocket.socket("inet", "stream", "tcp"))
+local socket = assert(luanet.socket("inet", "stream", "tcp"))
 assert(socket:connect(host, "http"))
 assert(socket:send(
     "GET / HTTP/1.1\r\n"..

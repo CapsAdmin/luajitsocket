@@ -1,11 +1,11 @@
-local bsocket = require("bsocket")
+local luanet = require("luanet")
 
 print("goto http://127.0.0.1:5001")
 
 do -- server
-    local info = bsocket.find_first_address("*", 5001)
+    local info = luanet.find_first_address("*", 5001)
 
-    local server = assert(bsocket.socket(info.family, info.socket_type, info.protocol))
+    local server = assert(luanet.socket(info.family, info.socket_type, info.protocol))
     server:set_blocking(false)
     assert(server:set_option("nodelay", true, "tcp"))
     assert(server:set_option("reuseaddr", true))

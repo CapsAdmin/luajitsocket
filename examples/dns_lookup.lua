@@ -1,6 +1,6 @@
-local bsocket = require("bsocket")
+local luanet = require("luanet")
 
-for _, info in ipairs(assert(bsocket.get_address_info({host = "www.google.com"}))) do
+for _, info in ipairs(assert(luanet.get_address_info({host = "www.google.com"}))) do
     print("================================")
     print("host: ", info.host)
     print("service: ", info.service)

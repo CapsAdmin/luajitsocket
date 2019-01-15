@@ -1,7 +1,7 @@
 local SSL = require("tls")
-local bsocket = require("bsocket")
+local luanet = require("luanet")
 local host = "github.com"
-local socket = assert(bsocket.socket("inet", "stream", "tcp"))
+local socket = assert(luanet.socket("inet", "stream", "tcp"))
 
 do
     local ffi = require("ffi")
