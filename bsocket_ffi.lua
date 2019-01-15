@@ -181,7 +181,7 @@ if jit.os == "Windows" then
             if not cache[num] then
                 local buffer = ffi.new("char[512]")
                 local len = ffi.C.FormatMessageA(flags, nil, num, 0, buffer, ffi.sizeof(buffer), nil)
-                cache[num] = ffi.string(buffer, len - 3)
+                cache[num] = ffi.string(buffer, len - 2)
             end
 
             return cache[num]

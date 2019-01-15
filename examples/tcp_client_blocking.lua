@@ -2,9 +2,9 @@ local bsocket = require("bsocket")
 
 local host = "www.freebsd.no"
 
-local socket = bsocket.socket("inet", "stream", "tcp")
-socket:connect(host, "http")
-socket:send(
+local socket = assert(bsocket.socket("inet", "stream", "tcp"))
+assert(socket:connect(host, "http"))
+assert(socket:send(
     "GET / HTTP/1.1\r\n"..
     "Host: " .. host .. "\r\n"..
     "User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0) Gecko/20100101 Firefox/64.0\r\n"..
@@ -14,13 +14,13 @@ socket:send(
     "Connection: keep-alive\r\n"..
     "Upgrade-Insecure-Requests: 1\r\n"..
     "\r\n"
-)
+))
 
 local total_length
 local str = ""
 
 while true do
-    local chunk = socket:receive()
+    local chunk = assert(socket:receive())
 
     if not chunk then
         break

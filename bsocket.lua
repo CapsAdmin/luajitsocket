@@ -100,8 +100,6 @@ function M.poll(socket, flags, timeout)
     }})
     local ok, err = bsock.poll(pfd, 1, timeout or 0)
     if not ok then return ok, err end
-print(pfd[0].revents)
-print(ok, err)
     return flags_to_table(pfd[0].revents, POLL.lookup, bit.bor), ok
 end
 
@@ -201,15 +199,15 @@ do
         return string.format("socket[%s-%s-%s][%s]", self.family, self.socket_type, self.protocol, self.fd)
     end
 
-    function M.socket(family, type, protocol)
-        local fd, err = bsock.socket(AF.strict_lookup(family), SOCK.strict_lookup(type), IPPROTO.strict_lookup(protocol))
+    function M.socket(family, socket_type, protocol)
+        local fd, err = bsock.socket(AF.strict_lookup(family), SOCK.strict_lookup(socket_type), IPPROTO.strict_lookup(protocol))
 
         if not fd then return fd, err end
 
         return setmetatable({
             fd = fd,
             family = family,
-            type = type,
+            socket_type = socket_type,
             protocol = protocol,
             blocking = true,
         }, meta)
@@ -323,7 +321,7 @@ do
             local client = setmetatable({
                 fd = fd,
                 family = "unknown",
-                type = "unknown",
+                socket_type = "unknown",
                 protocol = "unknown",
                 blocking = true,
             }, meta)
@@ -351,7 +349,7 @@ do
     function meta:is_connected()
         local ip, service = self:get_peer_name()
         local ip2, port2 = self:get_name()
-        if ip and ip2 then
+        if ip and ip2 and ip2 ~= "0.0.0.0" then
             return service ~= 0 and port2 ~= 0
         end
     end
@@ -376,8 +374,14 @@ do
         return ffi.string(bsock.inet_ntoa(data.sin_addr)), bsock.ntohs(data.sin_port)
     end
 
+    local default_flags = 0
+
+    if jit.os ~= "Windows" then
+        default_flags = bsock.e.MSG_NOSIGNAL
+    end
+
     function meta:send(data, flags)
-        flags = flags or bsock.e.MSG_NOSIGNAL
+        flags = flags or default_flags
 
         if self.on_send then
             return self:on_send(data, flags)
@@ -434,7 +438,7 @@ end
 function M.bind(host, service)
     local info, err = M.find_first_address(host, service, {
         family = "inet",
-        type = "stream",
+        socket_type = "stream",
         protocol = "tcp",
         flags = {"passive"},
     })
