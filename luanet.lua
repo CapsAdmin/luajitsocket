@@ -44,60 +44,20 @@ do
         end
     end
 
-    ffi.cdef([[
+    ffi.cdef[[
         struct sockaddr {
             unsigned short sa_family;
             char sa_data[14];
         };
 
-        struct in_addr
-        {
+        struct in_addr {
             uint32_t s_addr;
         };
 
-        char *strerror(int errnum);
-        int getaddrinfo(char const *node, char const *service, struct addrinfo const *hints, struct addrinfo **res);
-        int getnameinfo(const struct sockaddr* sa, uint32_t salen, char* host, size_t hostlen, char* serv, size_t servlen, int flags);
-        void freeaddrinfo(struct addrinfo *ai);
-        const char *gai_strerror(int errcode);
-        char *inet_ntoa(struct in_addr in);
-        uint16_t ntohs(uint16_t netshort);
-
-    ]])
-
-    function socket.getaddrinfo(node_name, service_name, hints, result)
-        local ret = C.getaddrinfo(node_name, service_name, hints, result)
-        if ret == 0 then
-            return true
-        end
-
-        return nil, ffi.string(C.gai_strerror(ret))
-    end
-
-    function socket.getnameinfo(address, length, host, hostlen, serv, servlen, flags)
-        local ret = C.getnameinfo(address, length, host, hostlen, serv, servlen, flags)
-        if ret == 0 then
-            return true
-        end
-
-        return nil, ffi.string(C.gai_strerror(ret))
-    end
-
-    do
-        ffi.cdef("const char *inet_ntop(int __af, const void *__cp, char *__buf, unsigned int __len);")
-
-        function socket.inet_ntop(family, addrinfo, strptr, strlen)
-            if C.inet_ntop(family, addrinfo, strptr, strlen) == nil then
-                return nil, socket.lasterror()
-            end
-
-            return strptr
-        end
-    end
-
+    ]]
 
     if jit.os == "Windows" then
-        ffi.cdef([[
+        ffi.cdef[[
             typedef uint64_t SOCKET;
 
             struct addrinfo
@@ -136,7 +96,7 @@ do
                 uint32_t nSize,
                 va_list *Arguments
             );
-        ]])
+        ]]
 
         socket.INVALID_SOCKET = ffi.new("SOCKET", -1)
 
@@ -145,7 +105,7 @@ do
         end
 
         do
-            ffi.cdef("int GetLastError();")
+            ffi.cdef[[int GetLastError();]]
 
             local FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000
             local FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200
@@ -167,7 +127,7 @@ do
         end
 
         do
-            ffi.cdef("int WSAStartup(uint16_t version, void *wsa_data);")
+            ffi.cdef[[int WSAStartup(uint16_t version, void *wsa_data);]]
 
             local wsa_data
 
@@ -205,7 +165,7 @@ do
         end
 
         do
-            ffi.cdef("int WSACleanup();")
+            ffi.cdef[[int WSACleanup();]]
 
             function socket.shutdown()
                 if C.WSACleanup() == 0 then
@@ -217,7 +177,7 @@ do
         end
 
         if jit.arch ~= "x64" then -- xp or something
-            ffi.cdef("int WSAAddressToStringA(struct sockaddr *, unsigned long, void *, char *, unsigned long *);")
+            ffi.cdef[[int WSAAddressToStringA(struct sockaddr *, unsigned long, void *, char *, unsigned long *);]]
 
             function socket.inet_ntop(family, pAddr, strptr, strlen)
                 -- win XP: http://memset.wordpress.com/2010/10/09/inet_ntop-for-win32/
@@ -237,7 +197,7 @@ do
         generic_function("closesocket", "int closesocket(SOCKET s);", "close")
 
         do
-            ffi.cdef("int ioctlsocket(SOCKET s, long cmd, unsigned long* argp);")
+            ffi.cdef[[int ioctlsocket(SOCKET s, long cmd, unsigned long* argp);]]
 
             local IOCPARM_MASK    = 0x7
             local IOC_IN          = 0x80000000
@@ -265,7 +225,7 @@ do
             return ret
         end
     else
-        ffi.cdef([[
+        ffi.cdef[[
             typedef int SOCKET;
 
             struct addrinfo {
@@ -278,7 +238,6 @@ do
                 char *ai_canonname;
                 struct addrinfo *ai_next;
             };
-
 
             struct sockaddr_in {
                 uint8_t sin_len;
@@ -295,7 +254,7 @@ do
             };
 
             int poll(struct pollfd *fds, unsigned long nfds, int timeout);
-        ]])
+        ]]
 
         socket.INVALID_SOCKET = -1
 
@@ -317,7 +276,7 @@ do
         generic_function("close", "int close(SOCKET s);")
 
         do
-            ffi.cdef("int fcntl(int, int, ...);")
+            ffi.cdef[[int fcntl(int, int, ...);]]
 
             local F_GETFL = 3
             local F_SETFL = 4
@@ -361,8 +320,49 @@ do
         end
     end
 
+
+    ffi.cdef[[
+        char *strerror(int errnum);
+        int getaddrinfo(char const *node, char const *service, struct addrinfo const *hints, struct addrinfo **res);
+        int getnameinfo(const struct sockaddr* sa, uint32_t salen, char* host, size_t hostlen, char* serv, size_t servlen, int flags);
+        void freeaddrinfo(struct addrinfo *ai);
+        const char *gai_strerror(int errcode);
+        char *inet_ntoa(struct in_addr in);
+        uint16_t ntohs(uint16_t netshort);
+    ]]
+
+    function socket.getaddrinfo(node_name, service_name, hints, result)
+        local ret = C.getaddrinfo(node_name, service_name, hints, result)
+        if ret == 0 then
+            return true
+        end
+
+        return nil, ffi.string(C.gai_strerror(ret))
+    end
+
+    function socket.getnameinfo(address, length, host, hostlen, serv, servlen, flags)
+        local ret = C.getnameinfo(address, length, host, hostlen, serv, servlen, flags)
+        if ret == 0 then
+            return true
+        end
+
+        return nil, ffi.string(C.gai_strerror(ret))
+    end
+
     do
-        ffi.cdef("SOCKET socket(int af, int type, int protocol);")
+        ffi.cdef[[const char *inet_ntop(int __af, const void *__cp, char *__buf, unsigned int __len);]]
+
+        function socket.inet_ntop(family, addrinfo, strptr, strlen)
+            if C.inet_ntop(family, addrinfo, strptr, strlen) == nil then
+                return nil, socket.lasterror()
+            end
+
+            return strptr
+        end
+    end
+
+    do
+        ffi.cdef[[SOCKET socket(int af, int type, int protocol);]]
 
         function socket.create(af, type, protocol)
             local fd = C.socket(af, type, protocol)
