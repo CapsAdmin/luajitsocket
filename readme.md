@@ -7,4 +7,4 @@ To test, run the examples like this:
 
 Assuminug you have luajit installed.
 
-The TLC client examples uses libtls (LibreSSL) which in turn depends on libssl and libcrypto. `tls.lua` has been auto generated based on the tls header.
+The TLS client examples uses libtls (LibreSSL) which in turn depends on libssl and libcrypto. `tls.lua` has been auto generated based on the tls header.
