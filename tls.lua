@@ -1,5 +1,12 @@
 local ffi = require("ffi")
-local CLIB = assert(ffi.load("./libtls.so"))
+local CLIB
+if ffi.os == "OSX" then
+	CLIB = assert(ffi.load("./libtls.dylib"))
+elseif ffi.os == "Windows" then
+	CLIB = assert(ffi.load("./tls.dll"))
+else
+	CLIB = assert(ffi.load("./libtls.so"))
+end
 ffi.cdef([[struct tls {};
 struct tls_config {};
 const char*(tls_peer_ocsp_url)(struct tls*);
