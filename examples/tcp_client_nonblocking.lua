@@ -42,5 +42,7 @@ while true do
                 error(err)
             end
         end
+    else
+        socket:poll_connect()
     end
 end
