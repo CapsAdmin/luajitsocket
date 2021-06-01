@@ -415,7 +415,7 @@ do
             return true
         end
 
-        return nil, ffi.string(C.gai_strerror(ret))
+        return nil, socket.lasterror(ret)
     end
 
     function socket.getnameinfo(address, length, host, hostlen, serv, servlen, flags)
@@ -424,7 +424,7 @@ do
             return true
         end
 
-        return nil, ffi.string(C.gai_strerror(ret))
+        return nil, socket.lasterror(ret)
     end
 
     do
