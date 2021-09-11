@@ -688,7 +688,7 @@ do
 
     errno = {
         EAGAIN = 11,
-        EWOULDBLOCK = errno.EAGAIN,
+        EWOULDBLOCK = 11, -- is errno.EAGAIN
         ENOTSOCK = 88,
         ECONNRESET = 104,
         EINPROGRESS = 115,
