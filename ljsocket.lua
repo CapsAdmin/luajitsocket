@@ -852,7 +852,7 @@ local function addrinfo_get_ip(self)
         return nil
     end
     local str = ffi.new("char[256]")
-    local addr = assert(socket.inet_ntop(AF.lookup[self.family], self.addrinfo.ai_addr.sa_data, str, ffi.sizeof(str)))
+    local addr = assert(socket.inet_ntop(AF.lookup[self.family], ffi.cast("struct sockaddr_in*", self.addrinfo.ai_addr).sin_addr, str, ffi.sizeof(str)))
     return ffi.string(addr)
 end
 
@@ -861,9 +861,9 @@ local function addrinfo_get_port(self)
         return nil
     end
     if self.family == "inet" then
-        return ffi.cast("struct sockaddr_in*", self.addrinfo.ai_addr).sin_port
+        return socket.ntohs(ffi.cast("struct sockaddr_in*", self.addrinfo.ai_addr).sin_port)
     elseif self.family == "inet6" then
-        return ffi.cast("struct sockaddr_in6*", self.addrinfo.ai_addr).sin6_port
+        return socket.ntohs(ffi.cast("struct sockaddr_in6*", self.addrinfo.ai_addr).sin6_port)
     end
 
     return nil, "unknown family " .. tostring(self.family)
