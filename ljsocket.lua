@@ -689,6 +689,7 @@ do
     errno = {
         EAGAIN = 11,
         EWOULDBLOCK = 11, -- is errno.EAGAIN
+        EINVAL = 22,
         ENOTSOCK = 88,
         ECONNRESET = 104,
         EINPROGRESS = 115,
@@ -723,6 +724,7 @@ do
         e.SO_DONTROUTE = 16
         e.SO_RCVLOWAT = 4100
 
+        errno.EINVAL = 10022
         errno.EAGAIN = 10035 -- Note: Does not exist on Windows
         errno.EWOULDBLOCK = 10035
         errno.EINPROGRESS = 10036
@@ -739,6 +741,7 @@ do
         e.SO_DONTROUTE = 0x0010
         e.SO_BROADCAST = 0x0020
 
+        errno.EINVAL = 22
         errno.EAGAIN = 35
         errno.EWOULDBLOCK = errno.EAGAIN
         errno.EINPROGRESS = 36
