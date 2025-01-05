@@ -336,6 +336,13 @@ do
             };
 
             int poll(struct pollfd *fds, unsigned long nfds, int timeout);
+
+            typedef long time_t;
+
+            typedef struct timeval {
+                time_t tv_sec;
+                time_t tv_usec;
+            } timeval;
         ]]
 
         do
@@ -1011,12 +1018,22 @@ do
     function meta:set_option(key, val, level)
         level = level or "socket"
 
-        if type(val) == "boolean" then
-            val = ffi.new("int[1]", val and 1 or 0)
-        elseif type(val) == "number" then
-            val = ffi.new("int[1]", val)
-        elseif type(val) ~= "cdata" then
-            error("unknown value type: " .. type(val))
+        if key:lower() == "rcvtimeo" then
+            if ffi.os == "Windows" then
+                val = ffi.new("int[1]", val)
+            else
+                local usec = val * 1000
+                val = ffi.new("struct timeval")
+                val.tv_usec = usec
+            end
+        else
+            if type(val) == "boolean" then
+                val = ffi.new("int[1]", val and 1 or 0)
+            elseif type(val) == "number" then
+                val = ffi.new("int[1]", val)
+            elseif type(val) ~= "cdata" then
+                error("unknown value type: " .. type(val))
+            end
         end
 
         local env = SO
@@ -1025,6 +1042,9 @@ do
         end
 
         return socket.setsockopt(self.fd, SOL.strict_lookup(level), env.strict_lookup(key), ffi.cast("void *", val), ffi.sizeof(val))
+    end
+    function meta:settimeout(t)
+        self:set_option("rcvtimeo", t)
     end
 
     function meta:connect(host, service)
