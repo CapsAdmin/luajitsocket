@@ -693,6 +693,7 @@ do
         ENOTSOCK = 88,
         ECONNRESET = 104,
         EINPROGRESS = 115,
+        ETIMEDOUT = 60
     }
 
     if ffi.os == "Windows" then
@@ -730,6 +731,7 @@ do
         errno.EINPROGRESS = 10036
         errno.ENOTSOCK = 10038
         errno.ECONNRESET = 10054
+        errno.ETIMEDOUT = 10060
     end
 
     if ffi.os == "OSX" then
@@ -747,6 +749,7 @@ do
         errno.EINPROGRESS = 36
         errno.ENOTSOCK = 38
         errno.ECONNRESET = 54
+        errno.ETIMEDOUT = 60
     end
 
     if socket.initialize then
@@ -838,6 +841,7 @@ local timeout_messages = {}
 timeout_messages[errno.EINPROGRESS] = true
 timeout_messages[errno.EAGAIN] = true
 timeout_messages[errno.EWOULDBLOCK] = true
+timeout_messages[errno.ETIMEDOUT] = true
 
 function M.poll(socket, flags, timeout)
     local pfd = ffi.new("struct pollfd[1]", {{
