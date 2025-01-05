@@ -1068,7 +1068,7 @@ do
 
         local ok, err, num = socket.connect(self.fd, res.addrinfo.ai_addr, res.addrinfo.ai_addrlen)
 
-        if not ok and not self.blocking then
+        if not ok and self.blocking then
             if timeout_messages[num] then
                 self.timeout_connected = {host, service}
                 return true
@@ -1151,7 +1151,7 @@ do
 
         local err, num = socket.lasterror()
 
-        if not self.blocking and timeout_messages[num] then
+        if self.blocking and timeout_messages[num] then
             return nil, "timeout", num
         end
 
@@ -1274,7 +1274,7 @@ do
         end
 
         if not len then
-            if not self.blocking and timeout_messages[num] then
+            if self.blocking and timeout_messages[num] then
                 return nil, "timeout", num
             end
 
