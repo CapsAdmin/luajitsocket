@@ -336,6 +336,13 @@ do
             };
 
             int poll(struct pollfd *fds, unsigned long nfds, int timeout);
+
+            typedef long time_t;
+
+            typedef struct timeval {
+                time_t tv_sec;
+                time_t tv_usec;
+            } timeval;
         ]]
 
         do
@@ -693,6 +700,7 @@ do
         ENOTSOCK = 88,
         ECONNRESET = 104,
         EINPROGRESS = 115,
+        ETIMEDOUT = 60
     }
 
     if ffi.os == "Windows" then
@@ -730,6 +738,7 @@ do
         errno.EINPROGRESS = 10036
         errno.ENOTSOCK = 10038
         errno.ECONNRESET = 10054
+        errno.ETIMEDOUT = 10060
     end
 
     if ffi.os == "OSX" then
@@ -747,6 +756,7 @@ do
         errno.EINPROGRESS = 36
         errno.ENOTSOCK = 38
         errno.ECONNRESET = 54
+        errno.ETIMEDOUT = 60
     end
 
     if socket.initialize then
@@ -838,6 +848,7 @@ local timeout_messages = {}
 timeout_messages[errno.EINPROGRESS] = true
 timeout_messages[errno.EAGAIN] = true
 timeout_messages[errno.EWOULDBLOCK] = true
+timeout_messages[errno.ETIMEDOUT] = true
 
 function M.poll(socket, flags, timeout)
     local pfd = ffi.new("struct pollfd[1]", {{
@@ -1007,12 +1018,22 @@ do
     function meta:set_option(key, val, level)
         level = level or "socket"
 
-        if type(val) == "boolean" then
-            val = ffi.new("int[1]", val and 1 or 0)
-        elseif type(val) == "number" then
-            val = ffi.new("int[1]", val)
-        elseif type(val) ~= "cdata" then
-            error("unknown value type: " .. type(val))
+        if key:lower() == "rcvtimeo" then
+            if ffi.os == "Windows" then
+                val = ffi.new("int[1]", val)
+            else
+                local usec = val * 1000
+                val = ffi.new("struct timeval")
+                val.tv_usec = usec
+            end
+        else
+            if type(val) == "boolean" then
+                val = ffi.new("int[1]", val and 1 or 0)
+            elseif type(val) == "number" then
+                val = ffi.new("int[1]", val)
+            elseif type(val) ~= "cdata" then
+                error("unknown value type: " .. type(val))
+            end
         end
 
         local env = SO
@@ -1021,6 +1042,9 @@ do
         end
 
         return socket.setsockopt(self.fd, SOL.strict_lookup(level), env.strict_lookup(key), ffi.cast("void *", val), ffi.sizeof(val))
+    end
+    function meta:settimeout(t)
+        self:set_option("rcvtimeo", t)
     end
 
     function meta:connect(host, service)
@@ -1044,7 +1068,7 @@ do
 
         local ok, err, num = socket.connect(self.fd, res.addrinfo.ai_addr, res.addrinfo.ai_addrlen)
 
-        if not ok and not self.blocking then
+        if not ok and self.blocking then
             if timeout_messages[num] then
                 self.timeout_connected = {host, service}
                 return true
@@ -1127,7 +1151,7 @@ do
 
         local err, num = socket.lasterror()
 
-        if not self.blocking and timeout_messages[num] then
+        if self.blocking and timeout_messages[num] then
             return nil, "timeout", num
         end
 
@@ -1250,7 +1274,7 @@ do
         end
 
         if not len then
-            if not self.blocking and timeout_messages[num] then
+            if self.blocking and timeout_messages[num] then
                 return nil, "timeout", num
             end
 
