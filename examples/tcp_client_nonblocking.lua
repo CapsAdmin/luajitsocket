@@ -3,8 +3,8 @@ local socket = require("ljsocket")
 local host = "www.freebsd.no"
 
 local socket = assert(socket.create("inet", "stream", "tcp"))
-assert(socket:set_blocking(false))
 assert(socket:connect(host, "http"))
+assert(socket:set_blocking(false))
 
 while true do
     if socket:is_connected() then
