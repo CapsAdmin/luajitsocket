@@ -1,0 +1,46 @@
+name: Linting and Tests
+
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out the repo
+      uses: actions/checkout@v4
+
+    - name: Build the Docker image
+      run: docker build .docker/alpine/ --tag ${{ github.repository }}-test:lua-5.2
+
+    - name: Run linter
+      uses: addnab/docker-run-action@v3
+      with:
+        image: ${{ github.repository }}-test:lua-5.2
+        options: -v ${{ github.workspace }}:/github/workspace
+        run: |
+            echo "Static luacheck ljsocket.lua"
+            luacheck --config .luacheckrc \
+              ljsocket.lua
+            echo "Linting ljsocket.lua"
+            lualint -s ljsocket.lua
+
+    - name: Bytecode verification
+      uses: addnab/docker-run-action@v3
+      with:
+        image: ${{ github.repository }}-test:lua-5.2
+        options: -v ${{ github.workspace }}:/github/workspace
+        run: |
+          echo "Checking JIT bytecode for ljsocket.lua"
+          luajit -bl ljsocket.lua /dev/null
+          echo "Checking bytecode for ljsocket.lua"
+          luac -p ljsocket.lua
+
+    - name: Run unit tests
+      uses: addnab/docker-run-action@v3
+      with:
+        image: ${{ github.repository }}-test:lua-5.2
+        options: -v ${{ github.workspace }}:/github/workspace
+        run: |
+            lunit -i `which luajit` $(find test -name "*_test.lua")
+            luacov ljsocket.lua
