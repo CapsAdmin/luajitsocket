@@ -1,7 +1,7 @@
 local ffi = require("ffi")
 local socket = {}
-local e = {}
-local errno = {}
+local e
+local errno
 
 do
     local C
@@ -11,8 +11,6 @@ do
     else
         C = ffi.C
     end
-
-    local M = {}
 
     local function generic_function(C_name, cdef, alias, size_error_handling)
         ffi.cdef(cdef)
@@ -850,13 +848,13 @@ timeout_messages[errno.EAGAIN] = true
 timeout_messages[errno.EWOULDBLOCK] = true
 timeout_messages[errno.ETIMEDOUT] = true
 
-function M.poll(socket, flags, timeout)
+function M.poll(sock, flags, timeout)
     local pfd = ffi.new("struct pollfd[1]", {{
-        fd = socket.fd,
+        fd = sock.fd,
         events = table_to_flags(flags, POLL.lookup, bit.bor),
         revents = 0,
     }})
-    local ok, err = socket.poll(pfd, 1, timeout or 0)
+    local ok, err = sock.poll(pfd, 1, timeout or 0)
     if not ok then return ok, err end
     return flags_to_table(pfd[0].revents, POLL.lookup, bit.bor), ok
 end
@@ -1131,7 +1129,7 @@ do
 
     function meta:accept()
         local address = ffi.new("struct sockaddr_in[1]")
-        local fd, err = socket.accept(self.fd, ffi.cast("struct sockaddr *", address), ffi.new("unsigned int[1]", ffi.sizeof(address)))
+        local fd, _ = socket.accept(self.fd, ffi.cast("struct sockaddr *", address), ffi.new("unsigned int[1]", ffi.sizeof(address)))
 
         if fd ~= socket.INVALID_SOCKET then
             local client = setmetatable({
@@ -1164,7 +1162,7 @@ do
 
     function meta:is_connected()
         local ip, service, num = self:get_peer_name()
-        local ip2, service2, num2 = self:get_name()
+        local ip2, service2, _ = self:get_name()
 
         if not ip and (num == errno.ECONNRESET or num == errno.ENOTSOCK) then
             return false, service, num
@@ -1321,7 +1319,8 @@ function M.bind(host, service)
         return info, err
     end
 
-    local server, err, num = M.create(info.family, info.socket_type, info.protocol)
+    local server, num
+    server, err, num = M.create(info.family, info.socket_type, info.protocol)
 
     if not server then
         return server, err, num
@@ -1329,7 +1328,8 @@ function M.bind(host, service)
 
     server:set_option("reuseaddr", 1)
 
-    local ok, err, num = server:bind(info)
+    local ok
+    ok, err, num = server:bind(info)
 
     if not ok then
         return ok, err, num
