@@ -10,13 +10,19 @@ jobs:
     - name: Check out the repo
       uses: actions/checkout@v4
 
+    - name: Create build image name
+      run: |
+        echo "IMAGENAME_LC=${IMAGENAME,,}" >> ${GITHUB_ENV}
+      env:
+        IMAGENAME: '${{ github.repository }}'
+
     - name: Build the Docker image
-      run: docker build .docker/alpine/ --tag ${{ github.repository }}-test:lua-5.2
+      run: docker build .docker/alpine/ --tag ${IMAGENAME_LC}-test:lua-5.2
 
     - name: Run linter
       uses: addnab/docker-run-action@v3
       with:
-        image: ${{ github.repository }}-test:lua-5.2
+        image: ${{ env.IMAGENAME_LC }}-test:lua-5.2
         options: -v ${{ github.workspace }}:/github/workspace
         run: |
             echo "Static luacheck ljsocket.lua"
@@ -28,7 +34,7 @@ jobs:
     - name: Bytecode verification
       uses: addnab/docker-run-action@v3
       with:
-        image: ${{ github.repository }}-test:lua-5.2
+        image: ${{ env.IMAGENAME_LC }}-test:lua-5.2
         options: -v ${{ github.workspace }}:/github/workspace
         run: |
           echo "Checking JIT bytecode for ljsocket.lua"
@@ -39,7 +45,7 @@ jobs:
     - name: Run unit tests
       uses: addnab/docker-run-action@v3
       with:
-        image: ${{ github.repository }}-test:lua-5.2
+        image: ${{ env.IMAGENAME_LC }}-test:lua-5.2
         options: -v ${{ github.workspace }}:/github/workspace
         run: |
             lunit -i `which luajit` $(find test -name "*_test.lua")
