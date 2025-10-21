@@ -2,6 +2,19 @@ local ffi = require("ffi")
 local socket = {}
 local e
 local errno
+--
+local pollfd
+local sockaddr
+local sockaddr_in
+local sockaddr_in6
+local sockaddr_ptr
+local sockaddr_boxed
+local sockaddr_in_ptr
+local sockaddr_in_boxed
+local sockaddr_in6_ptr
+local sockaddr_in6_boxed
+local addrinfo
+local SOCKET
 
 do
 	local C
@@ -12,211 +25,283 @@ do
 		C = ffi.C
 	end
 
-	local function generic_function(C_name, cdef, alias, size_error_handling)
-		ffi.cdef(cdef)
-		alias = alias or C_name
-		local func_name = alias
-		local func = C[C_name]
+	local id = 0
 
-		if size_error_handling == false then
-			socket[func_name] = func
-		elseif size_error_handling then
-			socket[func_name] = function(...)
-				local len = func(...)
+	local function load_c_function(symbol_name, ...)
+		local unique_name = id .. "_cdef_anon"
+		id = id + 1
+		local cdef = {}
+		local args = {}
 
-				if len < 0 then return nil, socket.lasterror() end
+		for i = 1, select("#", ...) do
+			local val = select(i, ...)
 
-				return len
+			if type(val) == "string" then
+				local start, stop = val:find("NAME", nil, true)
+				if start then
+					local before = val:sub(1, start-1)
+					local after = val:sub(stop+1, #val)					
+					table.insert(cdef, before)
+					table.insert(cdef, "$")
+					table.insert(cdef, after)
+
+					table.insert(args, unique_name)
+				else
+					table.insert(cdef, val)
+				end
+			elseif type(val) == "cdata" then
+				table.insert(cdef, "$")
+				table.insert(args, val)
+			else
+				error("Invalid argument type: " .. type(val), 2)
 			end
-		else
-			socket[func_name] = function(...)
-				local ret = func(...)
+		end
 
-				if ret == 0 then return true end
+		local cdef = table.concat(cdef) .. "asm(\"" .. symbol_name .. "\");"
+		local ok, err = pcall(ffi.cdef, cdef, unpack(args))
+		if not ok then
+			error(err, 2)
+		end
+		return ffi.C[unique_name]
+	end
 
-				return nil, socket.lasterror()
-			end
+	local function ZERO_SUCCESS(ret)
+		if ret == 0 then return true end
+
+		return nil, socket.lasterror()
+	end
+
+	local function BELOW_ZERO_ERROR(ret)
+		if ret < 0 then return nil, socket.lasterror() end
+
+		return ret
+	end
+
+	local function load_socket_function(symbol_name, error_handling, ...)
+		local ok, func = pcall(load_c_function, symbol_name, ...)
+		if not ok then error(func, 2) end
+		return function(...)
+			local ret = func(...)
+
+			if error_handling then return error_handling(ret, ...) end
+
+			return ret
 		end
 	end
 
-	ffi.cdef[[
-        struct in_addr {
-            uint32_t s_addr;
-        };
-
-        struct in6_addr {
-            union {
-                uint8_t u6_addr8[16];
-                uint16_t u6_addr16[8];
-                uint32_t u6_addr32[4];
-            } u6_addr;
-        };
-    ]]
+	local in_addr = ffi.typeof([[struct { 
+		uint32_t s_addr; 
+	}]])
+	local in6_addr = ffi.typeof([[struct { 
+		union {
+			uint8_t u6_addr8[16];
+			uint16_t u6_addr16[8];
+			uint32_t u6_addr32[4];
+		} u6_addr; 
+	}]])
 
 	-- https://www.cs.dartmouth.edu/~sergey/cs60/on-sockaddr-structs.txt
 	if ffi.os == "OSX" then
-		ffi.cdef[[
-            struct sockaddr {
-                uint8_t sa_len;
-                uint8_t sa_family;
-                char sa_data[14];
-            };
-
-            struct sockaddr_in {
-                uint8_t sin_len;
-                uint8_t sin_family;
-                uint16_t sin_port;
-                struct in_addr sin_addr;
-                char sin_zero[8];
-            };
-
-            struct sockaddr_in6 {
-                uint8_t sin6_len;
-                uint8_t sin6_family;
-                uint16_t sin6_port;
-                uint32_t sin6_flowinfo;
-                struct in6_addr sin6_addr;
-                uint32_t sin6_scope_id;
-            };
-        ]]
+		sockaddr = ffi.typeof([[
+			struct {
+				uint8_t sa_len;
+				uint8_t sa_family;
+				char sa_data[14];
+			}
+		]])
+		sockaddr_ptr = ffi.typeof("$*", sockaddr)
+		sockaddr_boxed = ffi.typeof("$[1]", sockaddr)
+		sockaddr_in = ffi.typeof(
+			[[
+			struct {
+				uint8_t sin_len;
+				uint8_t sin_family;
+				uint16_t sin_port;
+				$ sin_addr;
+				char sin_zero[8];
+			}
+		]],
+			in_addr
+		)
+		sockaddr_in_ptr = ffi.typeof("$*", sockaddr_in)
+		sockaddr_in_boxed = ffi.typeof("$[1]", sockaddr_in)
+		sockaddr_in6 = ffi.typeof(
+			[[
+			struct {
+				uint8_t sin6_len;
+				uint8_t sin6_family;
+				uint16_t sin6_port;
+				uint32_t sin6_flowinfo;
+				$ sin6_addr;
+				uint32_t sin6_scope_id;
+			}
+		]],
+			in6_addr
+		)
+		sockaddr_in6_ptr = ffi.typeof("$*", sockaddr_in6)
+		sockaddr_in6_boxed = ffi.typeof("$[1]", sockaddr_in6)
+		SOCKET = ffi.typeof("int32_t")
+		addrinfo = ffi.typeof(
+			[[
+			struct {
+                int ai_flags;
+                int ai_family;
+                int ai_socktype;
+                int ai_protocol;
+                uint32_t ai_addrlen;
+                char *ai_canonname;
+                $ *ai_addr;
+                void *ai_next;
+            }
+		]],
+			sockaddr
+		)
+		socket.INVALID_SOCKET = -1
 	elseif ffi.os == "Windows" then
-		ffi.cdef[[
-            struct sockaddr {
-                uint16_t sa_family;
-                char sa_data[14];
-            };
-
-            struct sockaddr_in {
-                int16_t sin_family;
-                uint16_t sin_port;
-                struct in_addr sin_addr;
-                uint8_t sin_zero[8];
-            };
-
-            struct sockaddr_in6 {
-                int16_t sin6_family;
-                uint16_t sin6_port;
-                uint32_t sin6_flowinfo;
-                struct in6_addr sin6_addr;
-                uint32_t sin6_scope_id;
-            };
-        ]]
-	else -- posix
-		ffi.cdef[[
-            struct sockaddr {
-                uint16_t sa_family;
-                char sa_data[14];
-            };
-
-            struct sockaddr_in {
-                uint16_t sin_family;
-                uint16_t sin_port;
-                struct in_addr sin_addr;
-                char sin_zero[8];
-            };
-
-            struct sockaddr_in6 {
-                uint16_t sin6_family;
-                uint16_t sin6_port;
-                uint32_t sin6_flowinfo;
-                struct in6_addr sin6_addr;
-                uint32_t sin6_scope_id;
-            };
-        ]]
-	end
-
-	if ffi.os == "Windows" then
-		ffi.cdef[[
-            typedef size_t SOCKET;
-
-            struct addrinfo {
+		sockaddr = ffi.typeof([[
+			struct {
+				uint16_t sa_family;
+				char sa_data[14];
+			}
+		]])
+		sockaddr_ptr = ffi.typeof("$*", sockaddr)
+		sockaddr_boxed = ffi.typeof("$[1]", sockaddr)
+		sockaddr_in = ffi.typeof(
+			[[
+			struct {
+				int16_t sin_family;
+				uint16_t sin_port;
+				$ sin_addr;
+				uint8_t sin_zero[8];
+			}
+		]],
+			in_addr
+		)
+		sockaddr_in_ptr = ffi.typeof("$*", sockaddr_in)
+		sockaddr_in_boxed = ffi.typeof("$[1]", sockaddr_in)
+		sockaddr_in6 = ffi.typeof(
+			[[
+			struct {
+				int16_t sin6_family;
+				uint16_t sin6_port;
+				uint32_t sin6_flowinfo;
+				$ sin6_addr;
+				uint32_t sin6_scope_id;
+			}
+		]],
+			in6_addr
+		)
+		sockaddr_in6_ptr = ffi.typeof("$*", sockaddr_in6)
+		sockaddr_in6_boxed = ffi.typeof("$[1]", sockaddr_in6)
+		SOCKET = ffi.typeof("size_t")
+		addrinfo = ffi.typeof(
+			[[
+			struct {
                 int ai_flags;
                 int ai_family;
                 int ai_socktype;
                 int ai_protocol;
                 size_t ai_addrlen;
                 char *ai_canonname;
-                struct sockaddr *ai_addr;
-                struct addrinfo *ai_next;
+                $ *ai_addr;
+                void *ai_next;
             };
-        ]]
-		socket.INVALID_SOCKET = ffi.new("SOCKET", -1)
-	elseif ffi.os == "OSX" then
-		ffi.cdef[[
-            typedef int32_t SOCKET;
-
-            struct addrinfo {
+		]],
+			sockaddr
+		)
+		socket.INVALID_SOCKET = ffi.new(SOCKET, -1)
+	else -- posix
+		sockaddr = ffi.typeof([[
+			struct {
+				uint16_t sa_family;
+				char sa_data[14];
+			}
+		]])
+		sockaddr_ptr = ffi.typeof("$*", sockaddr)
+		sockaddr_boxed = ffi.typeof("$[1]", sockaddr)
+		sockaddr_in = ffi.typeof(
+			[[
+			struct {
+				uint16_t sin_family;
+				uint16_t sin_port;
+				$ sin_addr;
+				char sin_zero[8];
+			}
+		]],
+			in_addr
+		)
+		sockaddr_in_ptr = ffi.typeof("$*", sockaddr_in)
+		sockaddr_in_boxed = ffi.typeof("$[1]", sockaddr_in)
+		sockaddr_in6 = ffi.typeof(
+			[[
+			struct {
+				uint16_t sin6_family;
+				uint16_t sin6_port;
+				uint32_t sin6_flowinfo;
+				$ sin6_addr;
+				uint32_t sin6_scope_id;
+			}
+		]],
+			in6_addr
+		)
+		sockaddr_in6_ptr = ffi.typeof("$*", sockaddr_in6)
+		sockaddr_in6_boxed = ffi.typeof("$[1]", sockaddr_in6)
+		SOCKET = ffi.typeof("int32_t")
+		addrinfo = ffi.typeof(
+			[[
+			struct {
                 int ai_flags;
                 int ai_family;
                 int ai_socktype;
                 int ai_protocol;
                 uint32_t ai_addrlen;
+                $ *ai_addr;
                 char *ai_canonname;
-                struct sockaddr *ai_addr;
-                struct addrinfo *ai_next;
-            };
-        ]]
-		socket.INVALID_SOCKET = -1
-	else
-		ffi.cdef[[
-            typedef int32_t SOCKET;
-
-            struct addrinfo {
-                int ai_flags;
-                int ai_family;
-                int ai_socktype;
-                int ai_protocol;
-                uint32_t ai_addrlen;
-                struct sockaddr *ai_addr;
-                char *ai_canonname;
-                struct addrinfo *ai_next;
-            };
-        ]]
+                void *ai_next;
+            }
+		]],
+			sockaddr
+		)
 		socket.INVALID_SOCKET = -1
 	end
 
-	assert(ffi.sizeof("struct sockaddr") == 16)
-	assert(ffi.sizeof("struct sockaddr_in") == 16)
+	assert(ffi.sizeof(sockaddr) == 16)
+	assert(ffi.sizeof(sockaddr_in) == 16)
+	pollfd = ffi.typeof([[
+		struct {
+			$ fd;
+			short events;
+			short revents;
+		}
+	]], SOCKET)
 
 	if ffi.os == "Windows" then
-		ffi.cdef[[
-
-            struct pollfd {
-                SOCKET fd;
-                short events;
-                short revents;
-            };
-            int WSAPoll(struct pollfd *fds, unsigned long int nfds, int timeout);
-
-            uint32_t GetLastError();
-            uint32_t FormatMessageA(
-                uint32_t dwFlags,
-                const void* lpSource,
-                uint32_t dwMessageId,
-                uint32_t dwLanguageId,
-                char* lpBuffer,
-                uint32_t nSize,
-                va_list *Arguments
-            );
-        ]]
-
-		local function WORD(low, high)
-			return bit.bor(low, bit.lshift(high, 8))
-		end
-
-		do
-			ffi.cdef[[int GetLastError();]]
+		do -- last error
+			local FormatMessageA = load_c_function(
+				"FormatMessageA",
+				[[
+					uint32_t NAME(uint32_t dwFlags,
+						const void* lpSource,
+						uint32_t dwMessageId,
+						uint32_t dwLanguageId,
+						char* lpBuffer,
+						uint32_t nSize,
+						va_list *Arguments
+					)
+				]]
+			)
+			local GetLastError = load_c_function("GetLastError", "int NAME()")
 			local FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000
 			local FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200
 			local flags = bit.bor(FORMAT_MESSAGE_IGNORE_INSERTS, FORMAT_MESSAGE_FROM_SYSTEM)
 			local cache = {}
 
 			function socket.lasterror(num)
-				num = num or ffi.C.GetLastError()
+				num = num or GetLastError()
 
 				if not cache[num] then
 					local buffer = ffi.new("char[512]")
-					local len = ffi.C.FormatMessageA(flags, nil, num, 0, buffer, ffi.sizeof(buffer), nil)
+					local len = FormatMessageA(flags, nil, num, 0, buffer, ffi.sizeof(buffer), nil)
 					cache[num] = ffi.string(buffer, len - 2)
 				end
 
@@ -224,8 +309,7 @@ do
 			end
 		end
 
-		do
-			ffi.cdef[[int WSAStartup(uint16_t version, void *wsa_data);]]
+		do -- init
 			local wsa_data
 
 			if jit.arch == "x64" then
@@ -250,43 +334,53 @@ do
                 }]])
 			end
 
+			local WSAStartup = load_c_function("WSAStartup", "int NAME(uint16_t version, ",wsa_data," *wsa_data)")
+
+			local function WORD(low, high)
+				return bit.bor(low, bit.lshift(high, 8))
+			end
+
 			function socket.initialize()
 				local data = wsa_data()
 
-				if C.WSAStartup(WORD(2, 2), data) == 0 then return data end
+				if WSAStartup(WORD(2, 2), data) == 0 then return data end
 
 				return nil, socket.lasterror()
 			end
 		end
 
-		do
-			ffi.cdef[[int WSACleanup();]]
+		do -- cleanup
+			local WSACleanup = load_c_function("WSACleanup", "int NAME()")
 
 			function socket.shutdown()
-				if C.WSACleanup() == 0 then return true end
+				if WSACleanup() == 0 then return true end
 
 				return nil, socket.lasterror()
 			end
 		end
 
 		if jit.arch ~= "x64" then -- xp or something
-			ffi.cdef[[int WSAAddressToStringA(struct sockaddr *, unsigned long, void *, char *, unsigned long *);]]
+			local WSAAddressToStringA = load_c_function(
+				"WSAAddressToStringA",
+				"int NAME($ *addr, unsigned long addrlen, void *reserved, char *name, unsigned long *namelen)",
+				sockaddr
+			)
 
 			function socket.inet_ntop(family, pAddr, strptr, strlen)
 				-- win XP: http://memset.wordpress.com/2010/10/09/inet_ntop-for-win32/
-				local srcaddr = ffi.new("struct sockaddr_in")
+				local srcaddr = sockaddr_in()
 				ffi.copy(srcaddr.sin_addr, pAddr, ffi.sizeof(srcaddr.sin_addr))
 				srcaddr.sin_family = family
 				local len = ffi.new("unsigned long[1]", strlen)
-				C.WSAAddressToStringA(ffi.cast("struct sockaddr *", srcaddr), ffi.sizeof(srcaddr), nil, strptr, len)
+				WSAAddressToStringA(ffi.cast(sockaddr_ptr, srcaddr), ffi.sizeof(srcaddr), nil, strptr, len)
 				return strptr
 			end
 		end
 
-		generic_function("closesocket", "int closesocket(SOCKET s);", "close")
+		socket.close = load_socket_function("closesocket", ZERO_SUCCESS, "int NAME(", SOCKET, ")")
 
 		do
-			ffi.cdef[[int ioctlsocket(SOCKET s, long cmd, unsigned long* argp);]]
+			local ioctlsocket = load_socket_function("ioctlsocket", ZERO_SUCCESS, "int NAME(", SOCKET, ", long cmd, unsigned long* argp)")
 			local IOCPARM_MASK = 0x7
 			local IOC_IN = 0x80000000
 
@@ -301,7 +395,7 @@ do
 
 			local FIONBIO = _IOW(string.byte("f"), 126, "uint32_t") -- -2147195266 -- 2147772030ULL
 			function socket.blocking(fd, b)
-				local ret = C.ioctlsocket(fd, FIONBIO, ffi.new("int[1]", b and 0 or 1))
+				local ret = ioctlsocket(fd, FIONBIO, ffi.new("int[1]", b and 0 or 1))
 
 				if ret == 0 then return true end
 
@@ -309,39 +403,28 @@ do
 			end
 		end
 
-		function socket.poll(fds, ndfs, timeout)
-			local ret = C.WSAPoll(fds, ndfs, timeout)
+		do
+			local WSAPoll = load_c_function("WSAPoll", "int NAME(",pollfd," *fds, unsigned long int nfds, int timeout)")
 
-			if ret < 0 then return nil, socket.lasterror() end
+			function socket.poll(fds, ndfs, timeout)
+				local ret = WSAPoll(fds, ndfs, timeout)
 
-			return ret
+				if ret < 0 then return nil, socket.lasterror() end
+
+				return ret
+			end
 		end
 	else
-		ffi.cdef[[
-            struct pollfd {
-                SOCKET fd;
-                short events;
-                short revents;
-            };
-
-            int poll(struct pollfd *fds, unsigned long nfds, int timeout);
-
-            typedef long time_t;
-
-            typedef struct timeval {
-                time_t tv_sec;
-                time_t tv_usec;
-            } timeval;
-        ]]
-
 		do
+			local strerror = load_c_function("strerror", "const char *NAME(int errnum)")
 			local cache = {}
 
-			function socket.lasterror(num)
+			function socket.lasterror(num, err_func)
+				err_func = err_func or strerror
 				num = num or ffi.errno()
 
 				if not cache[num] then
-					local err = ffi.string(ffi.C.strerror(num))
+					local err = ffi.string(err_func(num))
 					cache[num] = err == "" and tostring(num) or err
 				end
 
@@ -349,10 +432,10 @@ do
 			end
 		end
 
-		generic_function("close", "int close(SOCKET s);")
+		socket.close = load_socket_function("close", ZERO_SUCCESS, "int NAME(", SOCKET, ")")
 
 		do
-			ffi.cdef[[int fcntl(int, int, ...);]]
+			local fcntl = load_c_function("fcntl", "int NAME(int fd, int cmd, ...)")
 			local F_GETFL = 3
 			local F_SETFL = 4
 			local O_NONBLOCK = 04000
@@ -360,7 +443,7 @@ do
 			if ffi.os == "OSX" then O_NONBLOCK = 0x0004 end
 
 			function socket.blocking(fd, b)
-				local flags = ffi.C.fcntl(fd, F_GETFL, 0)
+				local flags = fcntl(fd, F_GETFL, 0)
 
 				if flags < 0 then -- error
 				return nil, socket.lasterror() end
@@ -371,7 +454,7 @@ do
 					flags = bit.bor(flags, O_NONBLOCK)
 				end
 
-				local ret = ffi.C.fcntl(fd, F_SETFL, ffi.new("int", flags))
+				local ret = fcntl(fd, F_SETFL, ffi.new("int", flags))
 
 				if ret < 0 then return nil, socket.lasterror() end
 
@@ -379,96 +462,135 @@ do
 			end
 		end
 
-		function socket.poll(fds, ndfs, timeout)
-			local ret = C.poll(fds, ndfs, timeout)
+		do
+			local poll = load_c_function("poll", "int NAME(",pollfd," *fds, unsigned long nfds, int timeout)")
 
-			if ret < 0 then return nil, socket.lasterror() end
+			function socket.poll(fds, ndfs, timeout)
+				local ret = poll(fds, ndfs, timeout)
 
-			return ret
+				if ret < 0 then return nil, socket.lasterror() end
+
+				return ret
+			end
 		end
 	end
 
-	ffi.cdef[[
-        char *strerror(int errnum);
-        int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res);
-        int getnameinfo(const struct sockaddr* sa, uint32_t salen, char* host, size_t hostlen, char* serv, size_t servlen, int flags);
-        void freeaddrinfo(struct addrinfo *ai);
-        const char *gai_strerror(int errcode);
-        char *inet_ntoa(struct in_addr in);
-        uint16_t ntohs(uint16_t netshort);
-    ]]
-
-	function socket.getaddrinfo(node_name, service_name, hints, result)
-		local ret = C.getaddrinfo(node_name, service_name, hints, result)
-
-		if ret == 0 then return true end
-
-		return nil, ffi.string(socket.lasterror(ret))
-	end
-
-	function socket.getnameinfo(address, length, host, hostlen, serv, servlen, flags)
-		local ret = C.getnameinfo(address, length, host, hostlen, serv, servlen, flags)
-
-		if ret == 0 then return true end
-
-		return nil, ffi.string(socket.lasterror(ret))
-	end
-
 	do
-		ffi.cdef[[const char *inet_ntop(int __af, const void *__cp, char *__buf, unsigned int __len);]]
+		local gai_strerror = load_c_function("gai_strerror", "const char *NAME(int errcode)")
 
-		function socket.inet_ntop(family, addrinfo, strptr, strlen)
-			if C.inet_ntop(family, addrinfo, strptr, strlen) == nil then
-				return nil, socket.lasterror()
-			end
+		local function GAI_ERROR_HANDLER(ret)
+			if ret == 0 then return true end
+
+			return nil, socket.lasterror(ret, gai_strerror)
+		end
+
+		socket.getaddrinfo = load_socket_function(
+			"getaddrinfo",
+			GAI_ERROR_HANDLER,
+			"int NAME(const char *node, const char *service, const ",
+			addrinfo,
+			" *hints, ",
+			addrinfo,
+			" **res)"
+		)
+		socket.getnameinfo = load_socket_function(
+			"getnameinfo",
+			GAI_ERROR_HANDLER,
+			"int NAME(const ",
+			sockaddr,
+			"* sa, uint32_t salen, char* host, size_t hostlen, char* serv, size_t servlen, int flags)"
+		)
+	end
+
+	socket.inet_ntop = load_socket_function(
+		"inet_ntop",
+		function(ret, f, a, strptr, strlen)
+			if ret == nil then return nil, socket.lasterror() end
 
 			return strptr
-		end
-	end
+		end,
+		"const char *NAME(int af, const void *cp, char *buf, unsigned int len)"
+	)
+	socket.create = load_socket_function(
+		"socket",
+		function(ret)
+			if ret <= 0 then return nil, socket.lasterror() end
 
-	do
-		ffi.cdef[[SOCKET socket(int af, int type, int protocol);]]
-
-		function socket.create(af, type, protocol)
-			local fd = C.socket(af, type, protocol)
-
-			if fd <= 0 then return nil, socket.lasterror() end
-
-			return fd
-		end
-	end
-
-	generic_function("shutdown", "int shutdown(SOCKET s, int how);")
-	generic_function(
+			return ret
+		end,
+		"",SOCKET," NAME(int af, int type, int protocol)"
+	)
+	socket.freeaddrinfo = load_c_function("freeaddrinfo", "void NAME(", addrinfo, " *ai)")
+	socket.inet_ntoa = load_c_function("inet_ntoa", "char* NAME(", in_addr, ")")
+	socket.ntohs = load_c_function("ntohs", "uint16_t NAME(uint16_t netshort)")
+	socket.shutdown = load_socket_function("shutdown", ZERO_SUCCESS, "int NAME(", SOCKET, ", int how)")
+	socket.setsockopt = load_socket_function(
 		"setsockopt",
-		"int setsockopt(SOCKET s, int level, int optname, const void* optval, uint32_t optlen);"
+		ZERO_SUCCESS,
+		"int NAME(",
+		SOCKET,
+		", int level, int optname, const void* optval, uint32_t optlen)"
 	)
-	generic_function(
+	socket.getsockopt = load_socket_function(
 		"getsockopt",
-		"int getsockopt(SOCKET s, int level, int optname, void *optval, uint32_t *optlen);"
+		ZERO_SUCCESS,
+		"int NAME(",
+		SOCKET,
+		", int level, int optname, void *optval, uint32_t *optlen)"
 	)
-	generic_function("accept", "SOCKET accept(SOCKET s, struct sockaddr *, int *);", nil, false)
-	generic_function("bind", "int bind(SOCKET s, const struct sockaddr* name, int namelen);")
-	generic_function("connect", "int connect(SOCKET s, const struct sockaddr * name, int namelen);")
-	generic_function("listen", "int listen(SOCKET s, int backlog);")
-	generic_function("recv", "int recv(SOCKET s, char* buf, int len, int flags);", nil, true)
-	generic_function(
+	socket.accept = load_socket_function(
+		"accept",
+		function(ret)
+			if ret == -1 then return nil, socket.lasterror() end
+
+			return ret
+		end,
+		SOCKET,
+		" NAME(",
+		SOCKET,
+		", ",
+		sockaddr,
+		" *, int *)"
+	)
+	socket.bind = load_socket_function("bind", ZERO_SUCCESS, "int NAME(", SOCKET, ", const ", sockaddr, "* name, int namelen)")
+	socket.connect = load_socket_function(
+		"connect",
+		ZERO_SUCCESS,
+		"int NAME(",
+		SOCKET,
+		", const ",
+		sockaddr,
+		"* name, int namelen)"
+	)
+	socket.listen = load_socket_function("listen", ZERO_SUCCESS, "int NAME(", SOCKET, ", int backlog)")
+	socket.recv = load_socket_function("recv", BELOW_ZERO_ERROR, "int NAME(", SOCKET, ", char* buf, int len, int flags)")
+	socket.recvfrom = load_socket_function(
 		"recvfrom",
-		"int recvfrom(SOCKET s, char* buf, int len, int flags, struct sockaddr *src_addr, unsigned int *addrlen);",
-		nil,
-		true
+		BELOW_ZERO_ERROR,
+		"int NAME(",
+		SOCKET,
+		", char* buf, int len, int flags, ",
+		sockaddr,
+		" *src_addr, unsigned int *addrlen)"
 	)
-	generic_function("send", "int send(SOCKET s, const char* buf, int len, int flags);", nil, true)
-	generic_function(
+	socket.send = load_socket_function(
+		"send",
+		BELOW_ZERO_ERROR,
+		"int NAME(",
+		SOCKET,
+		", const char* buf, int len, int flags)"
+	)
+	socket.sendto = load_socket_function(
 		"sendto",
-		"int sendto(SOCKET s, const char* buf, int len, int flags, const struct sockaddr* to, int tolen);",
-		nil,
-		true
+		BELOW_ZERO_ERROR,
+		"int NAME(",
+		SOCKET,
+		", const char* buf, int len, int flags, const ",
+		sockaddr,
+		"* to, int tolen)"
 	)
-	generic_function("getpeername", "int getpeername(SOCKET s, struct sockaddr *, unsigned int *);")
-	generic_function("getsockname", "int getsockname(SOCKET s, struct sockaddr *, unsigned int *);")
-	socket.inet_ntoa = C.inet_ntoa
-	socket.ntohs = C.ntohs
+	socket.getpeername = load_socket_function("getpeername", ZERO_SUCCESS, "int NAME(", SOCKET, ", ", sockaddr, " *, unsigned int *)")
+	socket.getsockname = load_socket_function("getsockname", ZERO_SUCCESS, "int NAME(", SOCKET, ", ", sockaddr, " *, unsigned int *)")
 
 	function socket.poll(fd, events, revents) end
 
@@ -816,10 +938,11 @@ timeout_messages[errno.EINPROGRESS] = true
 timeout_messages[errno.EAGAIN] = true
 timeout_messages[errno.EWOULDBLOCK] = true
 timeout_messages[errno.ETIMEDOUT] = true
+local pollfd_box = ffi.typeof("$[1]", pollfd)
 
 function M.poll(sock, flags, timeout)
 	local pfd = ffi.new(
-		"struct pollfd[1]",
+		pollfd_box,
 		{
 			{
 				fd = sock.fd,
@@ -842,7 +965,7 @@ local function addrinfo_get_ip(self)
 	local addr = assert(
 		socket.inet_ntop(
 			AF.lookup[self.family],
-			ffi.cast("struct sockaddr_in*", self.addrinfo.ai_addr).sin_addr,
+			ffi.cast(sockaddr_in_ptr, self.addrinfo.ai_addr).sin_addr,
 			str,
 			ffi.sizeof(str)
 		)
@@ -854,9 +977,9 @@ local function addrinfo_get_port(self)
 	if self.addrinfo.ai_addr == nil then return nil end
 
 	if self.family == "inet" then
-		return socket.ntohs(ffi.cast("struct sockaddr_in*", self.addrinfo.ai_addr).sin_port)
+		return socket.ntohs(ffi.cast(sockaddr_in_ptr, self.addrinfo.ai_addr).sin_port)
 	elseif self.family == "inet6" then
-		return socket.ntohs(ffi.cast("struct sockaddr_in6*", self.addrinfo.ai_addr).sin6_port)
+		return socket.ntohs(ffi.cast(sockaddr_in6_ptr, self.addrinfo.ai_addr).sin6_port)
 	end
 
 	return nil, "unknown family " .. tostring(self.family)
@@ -881,12 +1004,13 @@ local function addrinfo_to_table(res, host, service)
 	return info
 end
 
+local what = ffi.typeof("$*[1]", addrinfo)
+
 function M.get_address_info(data)
 	local hints
 
 	if data.socket_type or data.protocol or data.flags or data.family then
-		hints = ffi.new(
-			"struct addrinfo",
+		hints = addrinfo(
 			{
 				ai_family = data.family and AF.strict_lookup(data.family) or nil,
 				ai_socktype = data.socket_type and SOCK.strict_lookup(data.socket_type) or nil,
@@ -896,7 +1020,7 @@ function M.get_address_info(data)
 		)
 	end
 
-	local out = ffi.new("struct addrinfo*[1]")
+	local out = what()
 	local ok, err = socket.getaddrinfo(
 		data.host ~= "*" and data.host or nil,
 		data.service and tostring(data.service) or nil,
@@ -997,6 +1121,13 @@ do
 		return ok, err, num
 	end
 
+	local timeval = ffi.typeof[[
+		struct {
+			long tv_sec;
+			long tv_usec;
+		}
+	]]
+
 	function meta:set_option(key, val, level)
 		level = level or "socket"
 
@@ -1005,7 +1136,7 @@ do
 				val = ffi.new("int[1]", val)
 			else
 				local usec = val * 1000
-				val = ffi.new("struct timeval")
+				val = timeval()
 				val.tv_usec = usec
 			end
 		else
@@ -1116,12 +1247,16 @@ do
 	end
 
 	function meta:accept()
-		local address = ffi.new("struct sockaddr_in[1]")
-		local fd, _ = socket.accept(
+		local address = sockaddr_in()
+		local fd, err, num = socket.accept(
 			self.fd,
-			ffi.cast("struct sockaddr *", address),
+			ffi.cast(sockaddr_ptr, address),
 			ffi.new("unsigned int[1]", ffi.sizeof(address))
 		)
+
+		if not self.blocking and timeout_messages[num] then
+			return nil, "timeout", num
+		end
 
 		if fd ~= socket.INVALID_SOCKET then
 			local client = setmetatable(
@@ -1140,12 +1275,6 @@ do
 			end
 
 			return client
-		end
-
-		local err, num = socket.lasterror()
-
-		if not self.blocking and timeout_messages[num] then
-			return nil, "timeout", num
 		end
 
 		if self.debug then
@@ -1171,9 +1300,9 @@ do
 	end
 
 	function meta:get_peer_name()
-		local data = ffi.new("struct sockaddr_in")
+		local data = sockaddr_in()
 		local len = ffi.new("unsigned int[1]", ffi.sizeof(data))
-		local ok, err, num = socket.getpeername(self.fd, ffi.cast("struct sockaddr *", data), len)
+		local ok, err, num = socket.getpeername(self.fd, ffi.cast(sockaddr_ptr, data), len)
 
 		if not ok then return ok, err, num end
 
@@ -1181,9 +1310,9 @@ do
 	end
 
 	function meta:get_name()
-		local data = ffi.new("struct sockaddr_in")
+		local data = sockaddr_in()
 		local len = ffi.new("unsigned int[1]", ffi.sizeof(data))
-		local ok, err, num = socket.getsockname(self.fd, ffi.cast("struct sockaddr *", data), len)
+		local ok, err, num = socket.getsockname(self.fd, ffi.cast(sockaddr_ptr, data), len)
 
 		if not ok then return ok, err, num end
 
@@ -1221,8 +1350,8 @@ do
 		local src_addr_size
 
 		if not address then
-			src_addr = ffi.new("struct sockaddr_in[1]")
-			src_addr_size = ffi.sizeof("struct sockaddr_in")
+			src_addr = sockaddr_in_boxed()
+			src_addr_size = ffi.sizeof(sockaddr_in)
 		else
 			src_addr = address.addrinfo.ai_addr
 			src_addr_size = address.addrinfo.ai_addrlen
@@ -1247,7 +1376,7 @@ do
 				buff,
 				ffi.sizeof(buff),
 				flags or 0,
-				ffi.cast("struct sockaddr *", src_address),
+				ffi.cast(sockaddr_ptr, src_address),
 				len_res
 			)
 		else
@@ -1279,7 +1408,7 @@ do
 				return ffi.string(buff, len),
 				{
 					addrinfo = {
-						ai_addr = ffi.cast("struct sockaddr *", src_address),
+						ai_addr = ffi.cast(sockaddr_ptr, src_address),
 						ai_addrlen = len_res[0],
 					},
 					family = self.family,
