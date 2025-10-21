@@ -1,9 +1,381 @@
 local ffi = require("ffi")
 local socket = require("ljsocket")
 local ssl = {}
-
 local loaders = {
-	function() 
+	function()
+	-- Windows Schannel implementation
+	local secur32 = ffi.load("Secur32.dll")
+	local ws2 = ffi.load("ws2_32")
+	
+	-- Constants
+	local SECPKG_CRED_OUTBOUND = 2
+	local SECURITY_NATIVE_DREP = 0x00000010
+	local SECBUFFER_VERSION = 0
+	local SECBUFFER_EMPTY = 0
+	local SECBUFFER_DATA = 1
+	local SECBUFFER_TOKEN = 2
+	local SECBUFFER_ALERT = 17
+	local SECBUFFER_EXTRA = 5
+	local ISC_REQ_SEQUENCE_DETECT = 0x00000008
+	local ISC_REQ_REPLAY_DETECT = 0x00000004
+	local ISC_REQ_CONFIDENTIALITY = 0x00000010
+	local ISC_REQ_ALLOCATE_MEMORY = 0x00000100
+	local ISC_REQ_STREAM = 0x00008000
+	local ISC_REQ_USE_SUPPLIED_CREDS = 0x00000080
+	local ISC_REQ_MANUAL_CRED_VALIDATION = 0x00080000
+	
+	local SEC_E_OK = 0x00000000
+	local SEC_I_CONTINUE_NEEDED = 0x00090312
+	local SEC_E_INCOMPLETE_MESSAGE = 0x80090318
+	local SEC_I_CONTEXT_EXPIRED = 0x00090317
+	local SEC_E_INVALID_HANDLE = 0x80090301
+	
+	-- Types
+	local SECURITY_INTEGER = ffi.typeof("struct { uint32_t LowPart; int32_t HighPart; }")
+	local SecHandle = ffi.typeof("struct { uintptr_t dwLower; uintptr_t dwUpper; }")
+	local SecBuffer = ffi.typeof("struct { uint32_t cbBuffer; uint32_t BufferType; void* pvBuffer; }")
+	local SecBufferDesc = ffi.typeof("struct { uint32_t ulVersion; uint32_t cBuffers; $ *pBuffers; }", SecBuffer)
+	local SecBuffer1 = ffi.typeof("$[1]", SecBuffer)
+	local SecBuffer2 = ffi.typeof("$[2]", SecBuffer)
+	local SecBuffer4 = ffi.typeof("$[4]", SecBuffer)
+	
+	-- Function declarations
+	ffi.cdef("int AcquireCredentialsHandleA(const char*, const char*, uint32_t, void*, void*, void*, void*, $*, $*)", SecHandle, SECURITY_INTEGER)
+	ffi.cdef("int InitializeSecurityContextA($*, $*, const char*, uint32_t, uint32_t, uint32_t, $*, uint32_t, $*, $*, uint32_t*, $*)", 
+		SecHandle, SecHandle, SecBufferDesc, SecHandle, SecBufferDesc, SECURITY_INTEGER)
+	ffi.cdef("int EncryptMessage($*, uint32_t, $*, uint32_t)", SecHandle, SecBufferDesc)
+	ffi.cdef("int DecryptMessage($*, $*, uint32_t, uint32_t*)", SecHandle, SecBufferDesc)
+	ffi.cdef("int DeleteSecurityContext($*)", SecHandle)
+	ffi.cdef("int FreeCredentialsHandle($*)", SecHandle)
+	ffi.cdef("int FreeContextBuffer(void*)")
+	ffi.cdef("int WSAGetLastError()")
+	ffi.cdef("int recv(uintptr_t, void*, int, int)")
+	ffi.cdef("int send(uintptr_t, const void*, int, int)")
+	ffi.cdef([[
+		uint32_t FormatMessageA(
+			uint32_t dwFlags,
+			const void* lpSource,
+			uint32_t dwMessageId,
+			uint32_t dwLanguageId,
+			char* lpBuffer,
+			uint32_t nSize,
+			void* Arguments
+		);
+	]])
+	
+	-- Error message translation
+	local FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000
+	local FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200
+	local kernel32 = ffi.load("kernel32")
+	
+	-- Security status code names lookup
+	local security_status_names = {
+		[0x00000000] = "SEC_E_OK",
+		[0x00090312] = "SEC_I_CONTINUE_NEEDED",
+		[0x80090318] = "SEC_E_INCOMPLETE_MESSAGE",
+		[0x00090317] = "SEC_I_CONTEXT_EXPIRED",
+		[0x80090301] = "SEC_E_INVALID_HANDLE",
+		[0x80090300] = "SEC_E_INSUFFICIENT_MEMORY",
+		[0x80090302] = "SEC_E_INTERNAL_ERROR",
+		[0x80090303] = "SEC_E_INVALID_TOKEN",
+		[0x80090304] = "SEC_E_LOGON_DENIED",
+		[0x80090305] = "SEC_E_NO_CREDENTIALS",
+		[0x80090308] = "SEC_E_TARGET_UNKNOWN",
+		[0x80090311] = "SEC_E_UNSUPPORTED_FUNCTION",
+		[0x80090321] = "SEC_E_WRONG_PRINCIPAL",
+		[0x80090325] = "SEC_E_UNTRUSTED_ROOT",
+		[0x8009030C] = "SEC_E_MESSAGE_ALTERED",
+		[0x8009030D] = "SEC_E_OUT_OF_SEQUENCE",
+		[0x8009030E] = "SEC_E_NO_AUTHENTICATING_AUTHORITY",
+		[0x80090326] = "SEC_E_CERT_UNKNOWN",
+		[0x80090327] = "SEC_E_CERT_EXPIRED",
+	}
+	
+	local function get_wsa_error_string(err_code)
+		local buffer = ffi.new("char[512]")
+		local len = kernel32.FormatMessageA(
+			bit.bor(FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS),
+			nil,
+			err_code,
+			0, -- Default language
+			buffer,
+			512,
+			nil
+		)
+		
+		if len > 0 then
+			local msg = ffi.string(buffer, len)
+			-- Remove trailing newlines
+			msg = msg:gsub("[\r\n]+$", "")
+			return msg
+		end
+		
+		return string.format("WSA Error %d", err_code)
+	end
+	
+	local function get_security_error_string(status)
+		local status_name = security_status_names[status] or string.format("0x%08X", status)
+		local buffer = ffi.new("char[512]")
+		local len = kernel32.FormatMessageA(
+			bit.bor(FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS),
+			nil,
+			status,
+			0, -- Default language
+			buffer,
+			512,
+			nil
+		)
+		
+		if len > 0 then
+			local msg = ffi.string(buffer, len)
+			msg = msg:gsub("[\r\n]+$", "")
+			return string.format("%s: %s", status_name, msg)
+		end
+		
+		return status_name
+	end
+	
+	local hCreds = ffi.new(SecHandle)
+	local hContext = ffi.new(SecHandle)
+	local tsExpiry = ffi.new(SECURITY_INTEGER)
+	local state = "init"
+	local recv_buffer = ffi.new("uint8_t[?]", 65536)
+	local recv_len = 0
+	local stored_fd = nil
+	
+	-- Initialize credentials
+	local status = secur32.AcquireCredentialsHandleA(
+		nil, "Microsoft Unified Security Protocol Provider",
+		SECPKG_CRED_OUTBOUND, nil, nil, nil, nil, hCreds, tsExpiry)
+	
+	if status ~= SEC_E_OK then
+		error("AcquireCredentialsHandle failed: " .. get_security_error_string(status))
+	end
+	
+	local function connect(fd, host)
+		stored_fd = fd
+		
+		if state ~= "init" then
+			return true
+		end
+		
+		local dwSSPIFlags = bit.bor(ISC_REQ_SEQUENCE_DETECT, ISC_REQ_REPLAY_DETECT,
+			ISC_REQ_CONFIDENTIALITY, ISC_REQ_ALLOCATE_MEMORY, ISC_REQ_STREAM,
+			ISC_REQ_MANUAL_CRED_VALIDATION)
+		
+		local host_cstr = host and ffi.cast("const char*", host) or nil
+		local context_initialized = false
+		
+		-- TLS handshake loop
+		while true do
+			local outBuffers = ffi.new(SecBuffer1)
+			outBuffers[0].BufferType = SECBUFFER_TOKEN
+			outBuffers[0].cbBuffer = 0
+			outBuffers[0].pvBuffer = nil
+			
+			local outBufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 1, outBuffers)
+			
+			local inBuffers = nil
+			local inBufferDesc = nil
+			local contextAttribs = ffi.new("uint32_t[1]")
+			
+			if recv_len > 0 then
+				inBuffers = ffi.new(SecBuffer2)
+				inBuffers[0].BufferType = SECBUFFER_TOKEN
+				inBuffers[0].cbBuffer = recv_len
+				inBuffers[0].pvBuffer = recv_buffer
+				inBuffers[1].BufferType = SECBUFFER_EMPTY
+				inBuffers[1].cbBuffer = 0
+				inBuffers[1].pvBuffer = nil
+				inBufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 2, inBuffers)
+			end
+			
+			local hContextPtr = context_initialized and hContext or nil
+			
+			status = secur32.InitializeSecurityContextA(
+				hCreds, hContextPtr, host_cstr, dwSSPIFlags, 0, SECURITY_NATIVE_DREP,
+				inBufferDesc, 0, hContext, outBufferDesc, contextAttribs, tsExpiry)
+			
+			context_initialized = true
+			
+			if status == SEC_E_OK or status == SEC_I_CONTINUE_NEEDED then
+				-- Send output token if any
+				if outBuffers[0].cbBuffer > 0 and outBuffers[0].pvBuffer ~= nil then
+					local sent = ws2.send(fd, outBuffers[0].pvBuffer, outBuffers[0].cbBuffer, 0)
+					secur32.FreeContextBuffer(outBuffers[0].pvBuffer)
+					
+					if sent <= 0 then
+						return nil, "Failed to send handshake data"
+					end
+				end
+				
+				-- Check for extra data
+				if inBuffers and inBuffers[1].BufferType == SECBUFFER_EXTRA and inBuffers[1].cbBuffer > 0 then
+					local extra_offset = recv_len - inBuffers[1].cbBuffer
+					ffi.copy(recv_buffer, recv_buffer + extra_offset, inBuffers[1].cbBuffer)
+					recv_len = inBuffers[1].cbBuffer
+				else
+					recv_len = 0
+				end
+				
+				if status == SEC_E_OK then
+					state = "connected"
+					return true
+				end
+				
+				-- SEC_I_CONTINUE_NEEDED - need to receive server response
+				local bytes = ws2.recv(fd, recv_buffer + recv_len, 65536 - recv_len, 0)
+				if bytes > 0 then
+					recv_len = recv_len + bytes
+				elseif bytes == 0 then
+					return nil, "Connection closed during handshake"
+				else
+					local err = ffi.C.WSAGetLastError()
+					return nil, "recv failed: " .. get_wsa_error_string(err)
+				end
+			elseif status == SEC_E_INCOMPLETE_MESSAGE then
+				-- Need more data
+				local bytes = ws2.recv(fd, recv_buffer + recv_len, 65536 - recv_len, 0)
+				if bytes > 0 then
+					recv_len = recv_len + bytes
+				elseif bytes == 0 then
+					return nil, "Connection closed during handshake"
+				else
+					local err = ffi.C.WSAGetLastError()
+					return nil, "recv failed: " .. get_wsa_error_string(err)
+				end
+			else
+				return nil, "Handshake failed: " .. get_security_error_string(status)
+			end
+		end
+	end
+	
+	local function send(data)
+		if state ~= "connected" then
+			return nil, "Not connected"
+		end
+		
+		local sizes = ffi.new("struct { uint32_t cbMaximumMessage; uint32_t cBuffers; uint32_t cbBlockSize; uint32_t cbSecurityTrailer; }")
+		
+		-- Query buffer sizes (normally would call QueryContextAttributes)
+		sizes.cbSecurityTrailer = 50
+		sizes.cbBlockSize = 16384
+		
+		local msg_buffer = ffi.new("uint8_t[?]", sizes.cbSecurityTrailer + #data + sizes.cbBlockSize)
+		ffi.copy(msg_buffer + sizes.cbSecurityTrailer, data, #data)
+		
+		local buffers = ffi.new(SecBuffer4)
+		buffers[0].BufferType = SECBUFFER_EMPTY
+		buffers[0].cbBuffer = sizes.cbSecurityTrailer
+		buffers[0].pvBuffer = msg_buffer
+		buffers[1].BufferType = SECBUFFER_DATA
+		buffers[1].cbBuffer = #data
+		buffers[1].pvBuffer = msg_buffer + sizes.cbSecurityTrailer
+		buffers[2].BufferType = SECBUFFER_EMPTY
+		buffers[2].cbBuffer = sizes.cbBlockSize
+		buffers[2].pvBuffer = msg_buffer + sizes.cbSecurityTrailer + #data
+		buffers[3].BufferType = SECBUFFER_EMPTY
+		buffers[3].cbBuffer = 0
+		buffers[3].pvBuffer = nil
+		
+		local bufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 4, buffers)
+		
+		status = secur32.EncryptMessage(hContext, 0, bufferDesc, 0)
+		if status ~= SEC_E_OK then
+			return nil, "EncryptMessage failed: " .. get_security_error_string(status)
+		end
+		
+		local total_len = buffers[0].cbBuffer + buffers[1].cbBuffer + buffers[2].cbBuffer
+		local sent = ws2.send(stored_fd, msg_buffer, total_len, 0)
+		
+		if sent <= 0 then
+			return nil, "Send failed"
+		end
+		
+		return #data
+	end
+	
+	local function receive(buffer, max_size)
+		if state ~= "connected" then
+			return nil, "Not connected"
+		end
+		
+		if recv_len == 0 then
+			local bytes = ws2.recv(stored_fd, recv_buffer, 65536, 0)
+			if bytes > 0 then
+				recv_len = bytes
+			elseif bytes == 0 then
+				return ""
+			else
+				return nil, "timeout"
+			end
+		end
+		
+		local buffers = ffi.new(SecBuffer4)
+		buffers[0].BufferType = SECBUFFER_DATA
+		buffers[0].cbBuffer = recv_len
+		buffers[0].pvBuffer = recv_buffer
+		buffers[1].BufferType = SECBUFFER_EMPTY
+		buffers[2].BufferType = SECBUFFER_EMPTY
+		buffers[3].BufferType = SECBUFFER_EMPTY
+		
+		local bufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 4, buffers)
+		
+		status = secur32.DecryptMessage(hContext, bufferDesc, 0, nil)
+		
+		if status == SEC_E_OK or status == SEC_I_CONTEXT_EXPIRED then
+			-- Find data buffer
+			for i = 0, 3 do
+				if buffers[i].BufferType == SECBUFFER_DATA then
+					local data_len = math.min(buffers[i].cbBuffer, max_size)
+					ffi.copy(buffer, buffers[i].pvBuffer, data_len)
+					
+					-- Handle extra data
+					recv_len = 0
+					for j = 0, 3 do
+						if buffers[j].BufferType == SECBUFFER_EXTRA then
+							local extra_offset = recv_len
+							for k = 0, j do
+								extra_offset = extra_offset + buffers[k].cbBuffer
+							end
+							ffi.copy(recv_buffer, recv_buffer + extra_offset, buffers[j].cbBuffer)
+							recv_len = buffers[j].cbBuffer
+							break
+						end
+					end
+					
+					return ffi.string(buffer, data_len)
+				end
+			end
+			return ""
+		elseif status == SEC_E_INCOMPLETE_MESSAGE then
+			local bytes = ws2.recv(stored_fd, recv_buffer + recv_len, 65536 - recv_len, 0)
+			if bytes > 0 then
+				recv_len = recv_len + bytes
+				return nil, "timeout"
+			else
+				return nil, "timeout"
+			end
+		else
+			return nil, "DecryptMessage failed: " .. get_security_error_string(status)
+		end
+	end
+	
+	local function close()
+		if hContext.dwLower ~= 0 or hContext.dwUpper ~= 0 then
+			secur32.DeleteSecurityContext(hContext)
+		end
+		secur32.FreeCredentialsHandle(hCreds)
+	end
+	
+	return {
+		connect = connect,
+		send = send,
+		receive = receive,
+		close = close,
+	}
+end,
+	function()
 		local lib = require("tls")
 
 		if not lib.initialized then
@@ -27,9 +399,7 @@ local loaders = {
 		local function send(data)
 			local len = lib.tls_write(client, data, #data)
 
-			if len < 0 then
-				return nil, ffi.string(lib.tls_error(client))
-			end
+			if len < 0 then return nil, ffi.string(lib.tls_error(client)) end
 
 			return len
 		end
@@ -37,9 +407,7 @@ local loaders = {
 		local function receive(buffer, max_size)
 			local len = lib.tls_read(client, buffer, max_size)
 
-			if len < 0 then
-				return nil, ffi.string(lib.tls_error(client))
-			end
+			if len < 0 then return nil, ffi.string(lib.tls_error(client)) end
 
 			return ffi.string(buffer, len)
 		end
@@ -58,34 +426,50 @@ local loaders = {
 	end,
 	function()
 		-- Try to load libcrypto first (required by libssl)
-		local crypto_libs = {"/opt/homebrew/opt/openssl/lib/libcrypto.dylib", "crypto", "libcrypto.so.3", "libcrypto.so.1.1", "libcrypto.so"}
+		local crypto_libs = {
+			"/opt/homebrew/opt/openssl/lib/libcrypto.dylib",
+			"crypto",
+			"libcrypto.so.3",
+			"libcrypto.so.1.1",
+			"libcrypto.so",
+		}
 		local lib_crypto = nil
+
 		for _, name in ipairs(crypto_libs) do
 			print("Trying to load Crypto library: " .. name)
 			local success, loaded = pcall(ffi.load, name)
+
 			if success then
 				print("Loaded Crypto library: " .. name)
 				lib_crypto = loaded
+
 				break
 			end
 		end
-		
+
 		-- Try common library names for libssl
-		local ssl_libs = {"/opt/homebrew/opt/openssl/lib/libssl.dylib", "ssl", "libssl.so.3", "libssl.so.1.1", "libssl.so"}
+		local ssl_libs = {
+			"/opt/homebrew/opt/openssl/lib/libssl.dylib",
+			"ssl",
+			"libssl.so.3",
+			"libssl.so.1.1",
+			"libssl.so",
+		}
 		local lib_ssl = nil
+
 		for _, name in ipairs(ssl_libs) do
 			print("Trying to load SSL library: " .. name)
 			local success, loaded = pcall(ffi.load, name)
+
 			if success then
 				print("Loaded SSL library: " .. name)
 				lib_ssl = loaded
+
 				break
 			end
 		end
-		
-		if not lib_ssl then
-			error("Could not load OpenSSL")
-		end
+
+		if not lib_ssl then error("Could not load OpenSSL") end
 
 		ffi.cdef([[
 			typedef struct ssl_st SSL;
@@ -113,21 +497,18 @@ local loaders = {
 			// SNI support via SSL_ctrl (SSL_set_tlsext_host_name is a macro)
 			long SSL_ctrl(SSL *ssl, int cmd, long larg, void *parg);
 		]])
-
 		-- Try to initialize OpenSSL - handle both old and new versions
 		local initialized = false
-		
 		-- Try modern OpenSSL 1.1.0+ / 3.0+ initialization
 		local modern_init = pcall(function()
 			ffi.cdef([[
 				int OPENSSL_init_ssl(uint64_t opts, void *settings);
 			]])
 			local ret = lib_ssl.OPENSSL_init_ssl(0, nil)
-			if ret ~= 1 then
-				error("OPENSSL_init_ssl failed")
-			end
+
+			if ret ~= 1 then error("OPENSSL_init_ssl failed") end
 		end)
-		
+
 		if modern_init then
 			initialized = true
 		else
@@ -140,22 +521,17 @@ local loaders = {
 				]])
 				lib_ssl.SSL_library_init()
 				lib_ssl.SSL_load_error_strings()
-				if lib_crypto then
-					lib_crypto.OpenSSL_add_all_algorithms()
-				end
+
+				if lib_crypto then lib_crypto.OpenSSL_add_all_algorithms() end
 			end)
-			if legacy_init then
-				initialized = true
-			end
+
+			if legacy_init then initialized = true end
 		end
 
-		if not initialized then
-			error("Failed to initialize OpenSSL")
-		end
+		if not initialized then error("Failed to initialize OpenSSL") end
 
 		-- Get SSL method - try modern first, then legacy
 		local method = nil
-		
 		-- Try TLS_client_method (OpenSSL 1.1.0+ / 3.0+)
 		local modern_ok = pcall(function()
 			ffi.cdef([[
@@ -163,7 +539,7 @@ local loaders = {
 			]])
 			method = lib_ssl.TLS_client_method()
 		end)
-		
+
 		-- Try SSLv23_client_method (OpenSSL 1.0.x)
 		if not modern_ok or method == nil then
 			local legacy_ok = pcall(function()
@@ -172,7 +548,7 @@ local loaders = {
 				]])
 				method = lib_ssl.SSLv23_client_method()
 			end)
-			
+
 			if not legacy_ok then
 				-- Try TLSv1_2_client_method as another fallback
 				pcall(function()
@@ -183,28 +559,26 @@ local loaders = {
 				end)
 			end
 		end
-		
+
 		if method == nil then
 			error("Failed to get SSL method - OpenSSL library may be incompatible")
 		end
 
 		local ctx = lib_ssl.SSL_CTX_new(method)
-		if ctx == nil then
-			error("Failed to create SSL context")
-		end
+
+		if ctx == nil then error("Failed to create SSL context") end
 
 		local ssl_conn = nil
 		local state = "connecting"
-		
 		-- SSL_ctrl constants for SNI
 		local SSL_CTRL_SET_TLSEXT_HOSTNAME = 55
 		local TLSEXT_NAMETYPE_host_name = 0
 
 		local function get_error_string()
 			local err = lib_ssl.ERR_get_error()
-			if err == 0 then
-				return "Unknown SSL error"
-			end
+
+			if err == 0 then return "Unknown SSL error" end
+
 			local buf = ffi.new("char[256]")
 			lib_ssl.ERR_error_string(err, buf)
 			return ffi.string(buf)
@@ -213,6 +587,7 @@ local loaders = {
 		local function connect(fd, host)
 			if state == "connecting" then
 				ssl_conn = lib_ssl.SSL_new(ctx)
+
 				if ssl_conn == nil then
 					return nil, "Failed to create SSL connection"
 				end
@@ -224,11 +599,14 @@ local loaders = {
 				-- Set SNI hostname for certificate validation
 				if host then
 					-- SSL_set_tlsext_host_name is a macro, use SSL_ctrl directly
-					local ret = lib_ssl.SSL_ctrl(ssl_conn, SSL_CTRL_SET_TLSEXT_HOSTNAME, 
-					                              TLSEXT_NAMETYPE_host_name, ffi.cast("void*", host))
-					if ret == 0 then
-						return nil, "Failed to set SNI hostname"
-					end
+					local ret = lib_ssl.SSL_ctrl(
+						ssl_conn,
+						SSL_CTRL_SET_TLSEXT_HOSTNAME,
+						TLSEXT_NAMETYPE_host_name,
+						ffi.cast("void*", host)
+					)
+
+					if ret == 0 then return nil, "Failed to set SNI hostname" end
 				end
 
 				state = "handshaking"
@@ -236,63 +614,51 @@ local loaders = {
 
 			if state == "handshaking" then
 				local ret = lib_ssl.SSL_connect(ssl_conn)
+
 				if ret == 1 then
 					state = "connected"
 					return true
 				end
 
 				local err = lib_ssl.SSL_get_error(ssl_conn, ret)
+
 				-- SSL_ERROR_WANT_READ = 2, SSL_ERROR_WANT_WRITE = 3
-				if err == 2 or err == 3 then
-					return nil, "timeout", err
-				end
+				if err == 2 or err == 3 then return nil, "timeout", err end
 
 				return nil, get_error_string()
 			end
 
-			if state == "connected" then
-				return true
-			end
+			if state == "connected" then return true end
 
 			return nil, "timeout"
 		end
 
 		local function send(data_str)
-			if not ssl_conn then
-				return nil, "Not connected"
-			end
+			if not ssl_conn then return nil, "Not connected" end
 
 			local ret = lib_ssl.SSL_write(ssl_conn, data_str, #data_str)
-			if ret > 0 then
-				return ret
-			end
+
+			if ret > 0 then return ret end
 
 			local err = lib_ssl.SSL_get_error(ssl_conn, ret)
-			if err == 2 or err == 3 then
-				return nil, "timeout", err
-			end
+
+			if err == 2 or err == 3 then return nil, "timeout", err end
 
 			return nil, get_error_string()
 		end
 
 		local function receive(buffer_ptr, buffer_size)
-			if not ssl_conn then
-				return nil, "Not connected"
-			end
+			if not ssl_conn then return nil, "Not connected" end
 
 			local ret = lib_ssl.SSL_read(ssl_conn, buffer_ptr, buffer_size)
-			if ret > 0 then
-				return ffi.string(buffer_ptr, ret)
-			end
 
-			if ret == 0 then
-				return ""
-			end
+			if ret > 0 then return ffi.string(buffer_ptr, ret) end
+
+			if ret == 0 then return "" end
 
 			local err = lib_ssl.SSL_get_error(ssl_conn, ret)
-			if err == 2 or err == 3 then
-				return nil, "timeout", err
-			end
+
+			if err == 2 or err == 3 then return nil, "timeout", err end
 
 			return nil, get_error_string()
 		end
@@ -303,6 +669,7 @@ local loaders = {
 				lib_ssl.SSL_free(ssl_conn)
 				ssl_conn = nil
 			end
+
 			lib_ssl.SSL_CTX_free(ctx)
 		end
 
@@ -389,7 +756,6 @@ local loaders = {
 		end
 
 		local EAGAIN = 35
-
 		callbacks.read = callbacks.read or
 			ffi.cast("SSLReadFunc", function(connection, data, dataLength)
 				local fd_ptr = ffi.cast("int*", connection)
@@ -415,7 +781,6 @@ local loaders = {
 					end
 				end
 			end)
-
 		callbacks.write = callbacks.write or
 			ffi.cast("SSLWriteFunc", function(connection, data, dataLength)
 				local fd_ptr = ffi.cast("int*", connection)
@@ -496,9 +861,7 @@ local loaders = {
 
 			if status == 0 then return tonumber(processed[0]) end
 
-			if status == errSSLWouldBlock then
-				return nil, "timeout", status
-			end
+			if status == errSSLWouldBlock then return nil, "timeout", status end
 
 			return nil, string.format("SSLWrite: %s", status_to_msg(status))
 		end
@@ -515,9 +878,7 @@ local loaders = {
 				return ffi.string(buffer_ptr, len)
 			end
 
-			if status == errSSLWouldBlock then
-				return nil, "timeout", status
-			end
+			if status == errSSLWouldBlock then return nil, "timeout", status end
 
 			return nil, string.format("SSLRead: %s", status_to_msg(status))
 		end
@@ -533,19 +894,15 @@ local loaders = {
 			receive = receive,
 			close = close,
 		}
-	end
+	end,
 }
-
-
 local callbacks = {}
 
 function ssl.tls_client()
 	for _, loader in ipairs(loaders) do
 		local success, result = pcall(loader)
 
-		if success then
-			return result
-		end
+		if success then return result end
 	end
 
 	error("No SSL/TLS implementation available")
