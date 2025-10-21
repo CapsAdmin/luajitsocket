@@ -12,10 +12,10 @@ local addrinfo
 local SOCKET
 
 do
-	local C = ffi.os == "Windows" and assert(ffi.load("ws2_32")) or ffi.C
+	local SocketLib = ffi.os == "Windows" and assert(ffi.load("ws2_32")) or ffi.C
 	local id = 0
 
-	local function load_c_function(symbol_name, ...)
+	local function load_c_function(lib, symbol_name, ...)
 		local unique_name = id .. "_cdef_anon"
 		id = id + 1
 		local cdef = {}
@@ -50,7 +50,13 @@ do
 
 		if not ok then error(err, 2) end
 
-		return ffi.C[unique_name]
+		local ok, func = pcall(function()
+			return lib[unique_name]
+		end)
+
+		if not ok then error(func, 2) end
+
+		return func
 	end
 
 	local function ZERO_SUCCESS(ret)
@@ -66,7 +72,7 @@ do
 	end
 
 	local function load_socket_function(symbol_name, error_handling, ...)
-		local ok, func = pcall(load_c_function, symbol_name, ...)
+		local ok, func = pcall(load_c_function, SocketLib, symbol_name, ...)
 
 		if not ok then error(func, 2) end
 
@@ -183,7 +189,7 @@ do
                 char *ai_canonname;
                 $ *ai_addr;
                 void *ai_next;
-            };
+            }
 		]],
 			sockaddr
 		)
@@ -250,6 +256,7 @@ do
 	if ffi.os == "Windows" then
 		do -- last error
 			local FormatMessageA = load_c_function(
+				ffi.C,
 				"FormatMessageA",
 				[[
 					uint32_t NAME(uint32_t dwFlags,
@@ -262,7 +269,7 @@ do
 					)
 				]]
 			)
-			local GetLastError = load_c_function("GetLastError", "int NAME()")
+			local GetLastError = load_c_function(ffi.C, "GetLastError", "int NAME()")
 			local FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000
 			local FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200
 			local flags = bit.bor(FORMAT_MESSAGE_IGNORE_INSERTS, FORMAT_MESSAGE_FROM_SYSTEM)
@@ -306,7 +313,7 @@ do
                 }]])
 			end
 
-			local WSAStartup = load_c_function("WSAStartup", "int NAME(uint16_t version, ", wsa_data, " *wsa_data)")
+			local WSAStartup = load_c_function(SocketLib, "WSAStartup", "int NAME(uint16_t version, ", wsa_data, " *wsa_data)")
 
 			local function WORD(low, high)
 				return bit.bor(low, bit.lshift(high, 8))
@@ -322,7 +329,7 @@ do
 		end
 
 		do -- cleanup
-			local WSACleanup = load_c_function("WSACleanup", "int NAME()")
+			local WSACleanup = load_c_function(SocketLib, "WSACleanup", "int NAME()")
 
 			function socket.shutdown()
 				if WSACleanup() == 0 then return true end
@@ -331,11 +338,13 @@ do
 			end
 		end
 
-		if jit.arch ~= "x64" then -- xp or something
+		if jit.arch == "x32" then -- xp or something
 			local WSAAddressToStringA = load_c_function(
+				SocketLib,
 				"WSAAddressToStringA",
-				"int NAME($ *addr, unsigned long addrlen, void *reserved, char *name, unsigned long *namelen)",
-				sockaddr
+				"int NAME(",
+				sockaddr,
+				" *addr, unsigned long addrlen, void *reserved, char *name, unsigned long *namelen)"
 			)
 
 			function socket.inet_ntop(family, pAddr, strptr, strlen)
@@ -382,7 +391,13 @@ do
 		end
 
 		do
-			local WSAPoll = load_c_function("WSAPoll", "int NAME(", pollfd, " *fds, unsigned long int nfds, int timeout)")
+			local WSAPoll = load_c_function(
+				SocketLib,
+				"WSAPoll",
+				"int NAME(",
+				pollfd,
+				" *fds, unsigned long int nfds, int timeout)"
+			)
 
 			function socket.poll(fds, ndfs, timeout)
 				local ret = WSAPoll(fds, ndfs, timeout)
@@ -394,7 +409,7 @@ do
 		end
 	else
 		do
-			local strerror = load_c_function("strerror", "const char *NAME(int errnum)")
+			local strerror = load_c_function(ffi.C, "strerror", "const char *NAME(int errnum)")
 			local cache = {}
 
 			function socket.lasterror(num, err_func)
@@ -413,7 +428,7 @@ do
 		socket.close = load_socket_function("close", ZERO_SUCCESS, "int NAME(", SOCKET, ")")
 
 		do
-			local fcntl = load_c_function("fcntl", "int NAME(int fd, int cmd, ...)")
+			local fcntl = load_c_function(ffi.C, "fcntl", "int NAME(int fd, int cmd, ...)")
 			local F_GETFL = 3
 			local F_SETFL = 4
 			local O_NONBLOCK = 04000
@@ -441,7 +456,7 @@ do
 		end
 
 		do
-			local poll = load_c_function("poll", "int NAME(", pollfd, " *fds, unsigned long nfds, int timeout)")
+			local poll = load_c_function(ffi.C, "poll", "int NAME(", pollfd, " *fds, unsigned long nfds, int timeout)")
 
 			function socket.poll(fds, ndfs, timeout)
 				local ret = poll(fds, ndfs, timeout)
@@ -454,12 +469,22 @@ do
 	end
 
 	do
-		local gai_strerror = load_c_function("gai_strerror", "const char *NAME(int errcode)")
+		local GAI_ERROR_HANDLER
 
-		local function GAI_ERROR_HANDLER(ret)
-			if ret == 0 then return true end
+		if ffi.os == "Windows" then
+			function GAI_ERROR_HANDLER(ret)
+				if ret == 0 then return true end
 
-			return nil, socket.lasterror(ret, gai_strerror)
+				return nil, socket.lasterror(ret)
+			end
+		else
+			local gai_strerror = load_c_function(ffi.C, "gai_strerror", "const char *NAME(int errcode)")
+
+			function GAI_ERROR_HANDLER(ret)
+				if ret == 0 then return true end
+
+				return nil, socket.lasterror(ret, gai_strerror)
+			end
 		end
 
 		socket.getaddrinfo = load_socket_function(
@@ -500,9 +525,9 @@ do
 		SOCKET,
 		" NAME(int af, int type, int protocol)"
 	)
-	socket.freeaddrinfo = load_c_function("freeaddrinfo", "void NAME(", addrinfo, " *ai)")
-	socket.inet_ntoa = load_c_function("inet_ntoa", "char* NAME(", in_addr, ")")
-	socket.ntohs = load_c_function("ntohs", "uint16_t NAME(uint16_t netshort)")
+	socket.freeaddrinfo = load_c_function(SocketLib, "freeaddrinfo", "void NAME(", addrinfo, " *ai)")
+	socket.inet_ntoa = load_c_function(SocketLib, "inet_ntoa", "char* NAME(", in_addr, ")")
+	socket.ntohs = load_c_function(SocketLib, "ntohs", "uint16_t NAME(uint16_t netshort)")
 	socket.shutdown = load_socket_function("shutdown", ZERO_SUCCESS, "int NAME(", SOCKET, ", int how)")
 	socket.setsockopt = load_socket_function(
 		"setsockopt",
