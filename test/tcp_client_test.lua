@@ -1,15 +1,10 @@
-require("luacov")
-local lunit = require("lunit")
 local socket = require("ljsocket")
 
-module("tcp_test", lunit.testcase, package.seeall)
-
-function tcp_client_blocking_test()
+do -- tcp client blocking test
     local host = "www.freebsd.no"
-    local socket = socket.create("inet", "stream", "tcp")
-    lunit.assert(socket)
-    lunit.assert(socket:connect(host, "http"))
-    lunit.assert(socket:send(
+    local socket = assert(socket.create("inet", "stream", "tcp"))
+    assert(socket:connect(host, "http"))
+    assert(socket:send(
         "GET / HTTP/1.1\r\n"..
         "Host: " .. host .. "\r\n"..
         "User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0) Gecko/20100101 Firefox/64.0\r\n"..
@@ -25,8 +20,7 @@ function tcp_client_blocking_test()
     local str = ""
 
     while true do
-        local chunk = socket:receive()
-        lunit.assert(chunk)
+        local chunk = assert(socket:receive())
 
         if not chunk then
             break
@@ -44,24 +38,23 @@ function tcp_client_blocking_test()
         end
     end
 
-    lunit.assert_true(total_length > 1024)
-    lunit.assert_true(string.find(str, "HTTP/1.1 200 OK") > 0)
-    lunit.assert_true(string.find(str, "</html>") > 0)
+    assert(total_length > 1024)
+    assert(string.find(str, "HTTP/1.1 200 OK", nil, true) > 0)
+    assert(string.find(str, "</html>", nil, true) > 0)
 end
 
-function tcp_client_blocking_test()
+do -- tcp client non-blocking test
     local host = "www.freebsd.no"
-    local socket = socket.create("inet", "stream", "tcp")
-    lunit.assert(socket)
-    lunit.assert(socket:connect(host, "http"))
-    lunit.assert(socket:set_blocking(false))
+    local socket = assert(socket.create("inet", "stream", "tcp"))
+    assert(socket:connect(host, "http"))
+    assert(socket:set_blocking(false))
 
     local str = ""
     local total_length
 
     while true do
         if socket:is_connected() then
-            lunit.assert(socket:send(
+            assert(socket:send(
                 "GET / HTTP/1.1\r\n"..
                 "Host: "..host.."\r\n"..
                 "User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0) Gecko/20100101 Firefox/64.0\r\n"..
@@ -87,7 +80,7 @@ function tcp_client_blocking_test()
                     if #str >= total_length then
                         return
                     end
-                elseif num ~= 11 then
+                elseif err ~= "timeout" then
                     error(err)
                 end
             end
@@ -96,9 +89,7 @@ function tcp_client_blocking_test()
         end
     end
 
-    lunit.assert_true(total_length > 1024)
-    lunit.assert_true(string.find(str, "HTTP/1.1 200 OK") > 0)
-    lunit.assert_true(string.find(str, "</html>") > 0)
+    assert(total_length > 1024)
+    assert(string.find(str, "HTTP/1.1 200 OK", nil, true) > 0)
+    assert(string.find(str, "</html>", nil, true) > 0)
 end
-
-lunit.main(...)
