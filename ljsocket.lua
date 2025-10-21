@@ -8,23 +8,11 @@ local sockaddr
 local sockaddr_in
 local sockaddr_in6
 local sockaddr_ptr
-local sockaddr_boxed
-local sockaddr_in_ptr
-local sockaddr_in_boxed
-local sockaddr_in6_ptr
-local sockaddr_in6_boxed
 local addrinfo
 local SOCKET
 
 do
-	local C
-
-	if ffi.os == "Windows" then
-		C = assert(ffi.load("ws2_32"))
-	else
-		C = ffi.C
-	end
-
+	local C = ffi.os == "Windows" and assert(ffi.load("ws2_32")) or ffi.C
 	local id = 0
 
 	local function load_c_function(symbol_name, ...)
@@ -109,8 +97,6 @@ do
 				char sa_data[14];
 			}
 		]])
-		sockaddr_ptr = ffi.typeof("$*", sockaddr)
-		sockaddr_boxed = ffi.typeof("$[1]", sockaddr)
 		sockaddr_in = ffi.typeof(
 			[[
 			struct {
@@ -123,8 +109,6 @@ do
 		]],
 			in_addr
 		)
-		sockaddr_in_ptr = ffi.typeof("$*", sockaddr_in)
-		sockaddr_in_boxed = ffi.typeof("$[1]", sockaddr_in)
 		sockaddr_in6 = ffi.typeof(
 			[[
 			struct {
@@ -138,8 +122,6 @@ do
 		]],
 			in6_addr
 		)
-		sockaddr_in6_ptr = ffi.typeof("$*", sockaddr_in6)
-		sockaddr_in6_boxed = ffi.typeof("$[1]", sockaddr_in6)
 		SOCKET = ffi.typeof("int32_t")
 		addrinfo = ffi.typeof(
 			[[
@@ -164,8 +146,6 @@ do
 				char sa_data[14];
 			}
 		]])
-		sockaddr_ptr = ffi.typeof("$*", sockaddr)
-		sockaddr_boxed = ffi.typeof("$[1]", sockaddr)
 		sockaddr_in = ffi.typeof(
 			[[
 			struct {
@@ -177,8 +157,6 @@ do
 		]],
 			in_addr
 		)
-		sockaddr_in_ptr = ffi.typeof("$*", sockaddr_in)
-		sockaddr_in_boxed = ffi.typeof("$[1]", sockaddr_in)
 		sockaddr_in6 = ffi.typeof(
 			[[
 			struct {
@@ -191,8 +169,6 @@ do
 		]],
 			in6_addr
 		)
-		sockaddr_in6_ptr = ffi.typeof("$*", sockaddr_in6)
-		sockaddr_in6_boxed = ffi.typeof("$[1]", sockaddr_in6)
 		SOCKET = ffi.typeof("size_t")
 		addrinfo = ffi.typeof(
 			[[
@@ -217,8 +193,7 @@ do
 				char sa_data[14];
 			}
 		]])
-		sockaddr_ptr = ffi.typeof("$*", sockaddr)
-		sockaddr_boxed = ffi.typeof("$[1]", sockaddr)
+		
 		sockaddr_in = ffi.typeof(
 			[[
 			struct {
@@ -230,8 +205,6 @@ do
 		]],
 			in_addr
 		)
-		sockaddr_in_ptr = ffi.typeof("$*", sockaddr_in)
-		sockaddr_in_boxed = ffi.typeof("$[1]", sockaddr_in)
 		sockaddr_in6 = ffi.typeof(
 			[[
 			struct {
@@ -244,8 +217,6 @@ do
 		]],
 			in6_addr
 		)
-		sockaddr_in6_ptr = ffi.typeof("$*", sockaddr_in6)
-		sockaddr_in6_boxed = ffi.typeof("$[1]", sockaddr_in6)
 		SOCKET = ffi.typeof("int32_t")
 		addrinfo = ffi.typeof(
 			[[
@@ -591,6 +562,7 @@ do
 	)
 	socket.getpeername = load_socket_function("getpeername", ZERO_SUCCESS, "int NAME(", SOCKET, ", ", sockaddr, " *, unsigned int *)")
 	socket.getsockname = load_socket_function("getsockname", ZERO_SUCCESS, "int NAME(", SOCKET, ", ", sockaddr, " *, unsigned int *)")
+	sockaddr_ptr = ffi.typeof("$*", sockaddr)
 
 	function socket.poll(fd, events, revents) end
 
@@ -869,6 +841,8 @@ local function capture_flags(what)
 		end
 	end
 
+	local valid_flags = flags
+
 	return {
 		lookup = flags,
 		reverse = reverse,
@@ -890,6 +864,35 @@ local function capture_flags(what)
 
 			return flags[key]
 		end,
+		table_to_flags = function(flags, operation)
+			if type(flags) == "string" then flags = {flags} end
+
+			operation = operation or bit.band
+			local out = 0
+
+			for k, v in pairs(flags) do
+				local flag = valid_flags[v] or valid_flags[k]
+
+				if not flag then error("invalid flag " .. tostring(v), 2) end
+
+				out = operation(out, tonumber(flag))
+			end
+
+			return out
+		end,
+		flags_to_table = function(flags, operation)
+			if not flags then return valid_flags.default_valid_flag end
+
+			operation = operation or bit.band
+			local out = {}
+
+			for k, v in pairs(valid_flags) do
+				if operation(flags, v) > 0 then out[k] = true end
+			end
+
+			return out
+		end
+
 	}
 end
 
@@ -901,36 +904,6 @@ local SOL = capture_flags("SOL_")
 local SO = capture_flags("SO_")
 local TCP = capture_flags("TCP_")
 local POLL = capture_flags("POLL")
-
-local function table_to_flags(flags, valid_flags, operation)
-	if type(flags) == "string" then flags = {flags} end
-
-	operation = operation or bit.band
-	local out = 0
-
-	for k, v in pairs(flags) do
-		local flag = valid_flags[v] or valid_flags[k]
-
-		if not flag then error("invalid flag " .. tostring(v), 2) end
-
-		out = operation(out, tonumber(flag))
-	end
-
-	return out
-end
-
-local function flags_to_table(flags, valid_flags, operation)
-	if not flags then return valid_flags.default_valid_flag end
-
-	operation = operation or bit.band
-	local out = {}
-
-	for k, v in pairs(valid_flags) do
-		if operation(flags, v) > 0 then out[k] = true end
-	end
-
-	return out
-end
 
 local M = {}
 local timeout_messages = {}
@@ -946,7 +919,7 @@ function M.poll(sock, flags, timeout)
 		{
 			{
 				fd = sock.fd,
-				events = table_to_flags(flags, POLL.lookup, bit.bor),
+				events = POLL.table_to_flags(flags, bit.bor),
 				revents = 0,
 			},
 		}
@@ -955,8 +928,10 @@ function M.poll(sock, flags, timeout)
 
 	if not ok then return ok, err end
 
-	return flags_to_table(pfd[0].revents, POLL.lookup, bit.bor), ok
+	return POLL.flags_to_table(pfd[0].revents, bit.bor), ok
 end
+
+local sockaddr_in_ptr = ffi.typeof("$*", sockaddr_in)
 
 local function addrinfo_get_ip(self)
 	if self.addrinfo.ai_addr == nil then return nil end
@@ -972,6 +947,8 @@ local function addrinfo_get_ip(self)
 	)
 	return ffi.string(addr)
 end
+
+local sockaddr_in6_ptr = ffi.typeof("$*", sockaddr_in6)
 
 local function addrinfo_get_port(self)
 	if self.addrinfo.ai_addr == nil then return nil end
@@ -997,7 +974,7 @@ local function addrinfo_to_table(res, host, service)
 	info.family = AF.reverse[res.ai_family]
 	info.socket_type = SOCK.reverse[res.ai_socktype]
 	info.protocol = IPPROTO.reverse[res.ai_protocol]
-	info.flags = flags_to_table(res.ai_flags, AI.lookup, bit.band)
+	info.flags = AI.flags_to_table(res.ai_flags, bit.band)
 	info.addrinfo = res
 	info.get_ip = addrinfo_get_ip
 	info.get_port = addrinfo_get_port
@@ -1015,7 +992,7 @@ function M.get_address_info(data)
 				ai_family = data.family and AF.strict_lookup(data.family) or nil,
 				ai_socktype = data.socket_type and SOCK.strict_lookup(data.socket_type) or nil,
 				ai_protocol = data.protocol and IPPROTO.strict_lookup(data.protocol) or nil,
-				ai_flags = data.flags and table_to_flags(data.flags, AI.lookup, bit.bor) or nil,
+				ai_flags = data.flags and AI.table_to_flags(data.flags, bit.bor) or nil,
 			}
 		)
 	end
@@ -1076,6 +1053,36 @@ function M.find_first_address(host, service, options)
 	end
 
 	return addrinfo[1]
+end
+
+function M.bind(host, service)
+	local info, err = M.find_first_address(
+		host,
+		service,
+		{
+			family = "inet",
+			socket_type = "stream",
+			protocol = "tcp",
+			flags = {"passive"},
+		}
+	)
+
+	if not info then return info, err end
+
+	local server, num
+	server, err, num = M.create(info.family, info.socket_type, info.protocol)
+
+	if not server then return server, err, num end
+
+	server:set_option("reuseaddr", 1)
+	local ok
+	ok, err, num = server:bind(info)
+
+	if not ok then return ok, err, num end
+
+	server:set_option("sndbuf", 65536)
+	server:set_option("rcvbuf", 65536)
+	return server
 end
 
 do
@@ -1345,6 +1352,8 @@ do
 		if len > 0 then return len end
 	end
 
+	local sockaddr_in_boxed = ffi.typeof("$[1]", sockaddr_in)
+
 	function meta:receive_from(address, size, flags)
 		local src_addr
 		local src_addr_size
@@ -1422,36 +1431,6 @@ do
 
 		return nil, err, num
 	end
-end
-
-function M.bind(host, service)
-	local info, err = M.find_first_address(
-		host,
-		service,
-		{
-			family = "inet",
-			socket_type = "stream",
-			protocol = "tcp",
-			flags = {"passive"},
-		}
-	)
-
-	if not info then return info, err end
-
-	local server, num
-	server, err, num = M.create(info.family, info.socket_type, info.protocol)
-
-	if not server then return server, err, num end
-
-	server:set_option("reuseaddr", 1)
-	local ok
-	ok, err, num = server:bind(info)
-
-	if not ok then return ok, err, num end
-
-	server:set_option("sndbuf", 65536)
-	server:set_option("rcvbuf", 65536)
-	return server
 end
 
 return M
