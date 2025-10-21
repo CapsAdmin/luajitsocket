@@ -26,13 +26,13 @@ do
 
 			if type(val) == "string" then
 				local start, stop = val:find("NAME", nil, true)
+
 				if start then
-					local before = val:sub(1, start-1)
-					local after = val:sub(stop+1, #val)					
+					local before = val:sub(1, start - 1)
+					local after = val:sub(stop + 1, #val)
 					table.insert(cdef, before)
 					table.insert(cdef, "$")
 					table.insert(cdef, after)
-
 					table.insert(args, unique_name)
 				else
 					table.insert(cdef, val)
@@ -47,9 +47,9 @@ do
 
 		local cdef = table.concat(cdef) .. "asm(\"" .. symbol_name .. "\");"
 		local ok, err = pcall(ffi.cdef, cdef, unpack(args))
-		if not ok then
-			error(err, 2)
-		end
+
+		if not ok then error(err, 2) end
+
 		return ffi.C[unique_name]
 	end
 
@@ -67,7 +67,9 @@ do
 
 	local function load_socket_function(symbol_name, error_handling, ...)
 		local ok, func = pcall(load_c_function, symbol_name, ...)
+
 		if not ok then error(func, 2) end
+
 		return function(...)
 			local ret = func(...)
 
@@ -193,7 +195,6 @@ do
 				char sa_data[14];
 			}
 		]])
-		
 		sockaddr_in = ffi.typeof(
 			[[
 			struct {
@@ -305,7 +306,7 @@ do
                 }]])
 			end
 
-			local WSAStartup = load_c_function("WSAStartup", "int NAME(uint16_t version, ",wsa_data," *wsa_data)")
+			local WSAStartup = load_c_function("WSAStartup", "int NAME(uint16_t version, ", wsa_data, " *wsa_data)")
 
 			local function WORD(low, high)
 				return bit.bor(low, bit.lshift(high, 8))
@@ -351,7 +352,13 @@ do
 		socket.close = load_socket_function("closesocket", ZERO_SUCCESS, "int NAME(", SOCKET, ")")
 
 		do
-			local ioctlsocket = load_socket_function("ioctlsocket", ZERO_SUCCESS, "int NAME(", SOCKET, ", long cmd, unsigned long* argp)")
+			local ioctlsocket = load_socket_function(
+				"ioctlsocket",
+				ZERO_SUCCESS,
+				"int NAME(",
+				SOCKET,
+				", long cmd, unsigned long* argp)"
+			)
 			local IOCPARM_MASK = 0x7
 			local IOC_IN = 0x80000000
 
@@ -375,7 +382,7 @@ do
 		end
 
 		do
-			local WSAPoll = load_c_function("WSAPoll", "int NAME(",pollfd," *fds, unsigned long int nfds, int timeout)")
+			local WSAPoll = load_c_function("WSAPoll", "int NAME(", pollfd, " *fds, unsigned long int nfds, int timeout)")
 
 			function socket.poll(fds, ndfs, timeout)
 				local ret = WSAPoll(fds, ndfs, timeout)
@@ -434,7 +441,7 @@ do
 		end
 
 		do
-			local poll = load_c_function("poll", "int NAME(",pollfd," *fds, unsigned long nfds, int timeout)")
+			local poll = load_c_function("poll", "int NAME(", pollfd, " *fds, unsigned long nfds, int timeout)")
 
 			function socket.poll(fds, ndfs, timeout)
 				local ret = poll(fds, ndfs, timeout)
@@ -489,7 +496,9 @@ do
 
 			return ret
 		end,
-		"",SOCKET," NAME(int af, int type, int protocol)"
+		"",
+		SOCKET,
+		" NAME(int af, int type, int protocol)"
 	)
 	socket.freeaddrinfo = load_c_function("freeaddrinfo", "void NAME(", addrinfo, " *ai)")
 	socket.inet_ntoa = load_c_function("inet_ntoa", "char* NAME(", in_addr, ")")
@@ -523,7 +532,15 @@ do
 		sockaddr,
 		" *, int *)"
 	)
-	socket.bind = load_socket_function("bind", ZERO_SUCCESS, "int NAME(", SOCKET, ", const ", sockaddr, "* name, int namelen)")
+	socket.bind = load_socket_function(
+		"bind",
+		ZERO_SUCCESS,
+		"int NAME(",
+		SOCKET,
+		", const ",
+		sockaddr,
+		"* name, int namelen)"
+	)
 	socket.connect = load_socket_function(
 		"connect",
 		ZERO_SUCCESS,
@@ -560,8 +577,24 @@ do
 		sockaddr,
 		"* to, int tolen)"
 	)
-	socket.getpeername = load_socket_function("getpeername", ZERO_SUCCESS, "int NAME(", SOCKET, ", ", sockaddr, " *, unsigned int *)")
-	socket.getsockname = load_socket_function("getsockname", ZERO_SUCCESS, "int NAME(", SOCKET, ", ", sockaddr, " *, unsigned int *)")
+	socket.getpeername = load_socket_function(
+		"getpeername",
+		ZERO_SUCCESS,
+		"int NAME(",
+		SOCKET,
+		", ",
+		sockaddr,
+		" *, unsigned int *)"
+	)
+	socket.getsockname = load_socket_function(
+		"getsockname",
+		ZERO_SUCCESS,
+		"int NAME(",
+		SOCKET,
+		", ",
+		sockaddr,
+		" *, unsigned int *)"
+	)
 	sockaddr_ptr = ffi.typeof("$*", sockaddr)
 
 	function socket.poll(fd, events, revents) end
@@ -842,7 +875,6 @@ local function capture_flags(what)
 	end
 
 	local valid_flags = flags
-
 	return {
 		lookup = flags,
 		reverse = reverse,
@@ -891,8 +923,7 @@ local function capture_flags(what)
 			end
 
 			return out
-		end
-
+		end,
 	}
 end
 
@@ -904,7 +935,6 @@ local SOL = capture_flags("SOL_")
 local SO = capture_flags("SO_")
 local TCP = capture_flags("TCP_")
 local POLL = capture_flags("POLL")
-
 local M = {}
 local timeout_messages = {}
 timeout_messages[errno.EINPROGRESS] = true
@@ -929,130 +959,6 @@ function M.poll(sock, flags, timeout)
 	if not ok then return ok, err end
 
 	return POLL.flags_to_table(pfd[0].revents, bit.bor), ok
-end
-
-local sockaddr_in_ptr = ffi.typeof("$*", sockaddr_in)
-
-local function addrinfo_get_ip(self)
-	if self.addrinfo.ai_addr == nil then return nil end
-
-	local str = ffi.new("char[256]")
-	local addr = assert(
-		socket.inet_ntop(
-			AF.lookup[self.family],
-			ffi.cast(sockaddr_in_ptr, self.addrinfo.ai_addr).sin_addr,
-			str,
-			ffi.sizeof(str)
-		)
-	)
-	return ffi.string(addr)
-end
-
-local sockaddr_in6_ptr = ffi.typeof("$*", sockaddr_in6)
-
-local function addrinfo_get_port(self)
-	if self.addrinfo.ai_addr == nil then return nil end
-
-	if self.family == "inet" then
-		return socket.ntohs(ffi.cast(sockaddr_in_ptr, self.addrinfo.ai_addr).sin_port)
-	elseif self.family == "inet6" then
-		return socket.ntohs(ffi.cast(sockaddr_in6_ptr, self.addrinfo.ai_addr).sin6_port)
-	end
-
-	return nil, "unknown family " .. tostring(self.family)
-end
-
-local function addrinfo_to_table(res, host, service)
-	local info = {}
-
-	if res.ai_canonname ~= nil then
-		info.canonical_name = ffi.string(res.ai_canonname)
-	end
-
-	info.host = host ~= "*" and host or nil
-	info.service = service
-	info.family = AF.reverse[res.ai_family]
-	info.socket_type = SOCK.reverse[res.ai_socktype]
-	info.protocol = IPPROTO.reverse[res.ai_protocol]
-	info.flags = AI.flags_to_table(res.ai_flags, bit.band)
-	info.addrinfo = res
-	info.get_ip = addrinfo_get_ip
-	info.get_port = addrinfo_get_port
-	return info
-end
-
-local what = ffi.typeof("$*[1]", addrinfo)
-
-function M.get_address_info(data)
-	local hints
-
-	if data.socket_type or data.protocol or data.flags or data.family then
-		hints = addrinfo(
-			{
-				ai_family = data.family and AF.strict_lookup(data.family) or nil,
-				ai_socktype = data.socket_type and SOCK.strict_lookup(data.socket_type) or nil,
-				ai_protocol = data.protocol and IPPROTO.strict_lookup(data.protocol) or nil,
-				ai_flags = data.flags and AI.table_to_flags(data.flags, bit.bor) or nil,
-			}
-		)
-	end
-
-	local out = what()
-	local ok, err = socket.getaddrinfo(
-		data.host ~= "*" and data.host or nil,
-		data.service and tostring(data.service) or nil,
-		hints,
-		out
-	)
-
-	if not ok then return ok, err end
-
-	local tbl = {}
-	local res = out[0]
-
-	while res ~= nil do
-		table.insert(tbl, addrinfo_to_table(res, data.host, data.service))
-		res = res.ai_next
-	end
-
-	--ffi.C.freeaddrinfo(out[0])
-	return tbl
-end
-
-function M.find_first_address(host, service, options)
-	options = options or {}
-	local info = {}
-	info.host = host
-	info.service = service
-	info.family = options.family or "inet"
-	info.socket_type = options.socket_type or "stream"
-	info.protocol = options.protocol or "tcp"
-	info.flags = options.flags
-
-	if host == "*" then
-		info.flags = info.flags or {}
-		table.insert(info.flags, "passive")
-	end
-
-	local addrinfo, err = M.get_address_info(info)
-
-	if not addrinfo then return nil, err end
-
-	if not addrinfo[1] then
-		return nil, "no addresses found (empty address info table)"
-	end
-
-	for _, v in ipairs(addrinfo) do
-		if
-			v.family == info.family and
-			v.socket_type == info.socket_type and
-			v.protocol == info.protocol
-		then
-			return v
-		end
-	end
-
-	return addrinfo[1]
 end
 
 function M.bind(host, service)
@@ -1083,6 +989,162 @@ function M.bind(host, service)
 	server:set_option("sndbuf", 65536)
 	server:set_option("rcvbuf", 65536)
 	return server
+end
+
+do -- addrinfo
+	local sockaddr_in_ptr = ffi.typeof("$*", sockaddr_in)
+
+	local function addrinfo_get_ip(self)
+		if self.addrinfo.ai_addr == nil then return nil end
+
+		local str = ffi.new("char[256]")
+		local addr = assert(
+			socket.inet_ntop(
+				AF.lookup[self.family],
+				ffi.cast(sockaddr_in_ptr, self.addrinfo.ai_addr).sin_addr,
+				str,
+				ffi.sizeof(str)
+			)
+		)
+		return ffi.string(addr)
+	end
+
+	local sockaddr_in6_ptr = ffi.typeof("$*", sockaddr_in6)
+
+	local function addrinfo_get_port(self)
+		if self.addrinfo.ai_addr == nil then return nil end
+
+		if self.family == "inet" then
+			return socket.ntohs(ffi.cast(sockaddr_in_ptr, self.addrinfo.ai_addr).sin_port)
+		elseif self.family == "inet6" then
+			return socket.ntohs(ffi.cast(sockaddr_in6_ptr, self.addrinfo.ai_addr).sin6_port)
+		end
+
+		return nil, "unknown family " .. tostring(self.family)
+	end
+
+	local function addrinfo_to_table(res, host, service)
+		local info = {}
+
+		if res.ai_canonname ~= nil then
+			info.canonical_name = ffi.string(res.ai_canonname)
+		end
+
+		info.host = host ~= "*" and host or nil
+		info.service = service
+		info.family = AF.reverse[res.ai_family]
+		info.socket_type = SOCK.reverse[res.ai_socktype]
+		info.protocol = IPPROTO.reverse[res.ai_protocol]
+		info.flags = AI.flags_to_table(res.ai_flags, bit.band)
+		info.addrinfo = res
+		info.get_ip = addrinfo_get_ip
+		info.get_port = addrinfo_get_port
+		return info
+	end
+
+	local what = ffi.typeof("$*[1]", addrinfo)
+	local addrinfo_ptr = ffi.typeof("$*", addrinfo)
+
+	function M.get_address_info(data)
+		local hints
+
+		if data.socket_type or data.protocol or data.flags or data.family then
+			hints = addrinfo(
+				{
+					ai_family = data.family and AF.strict_lookup(data.family) or nil,
+					ai_socktype = data.socket_type and SOCK.strict_lookup(data.socket_type) or nil,
+					ai_protocol = data.protocol and IPPROTO.strict_lookup(data.protocol) or nil,
+					ai_flags = data.flags and AI.table_to_flags(data.flags, bit.bor) or nil,
+				}
+			)
+		end
+
+		local out = what()
+		local ok, err = socket.getaddrinfo(
+			data.host ~= "*" and data.host or nil,
+			data.service and tostring(data.service) or nil,
+			hints,
+			out
+		)
+
+		if not ok then return ok, err end
+
+		local tbl = {}
+		local res = out[0]
+
+		while true do
+			table.insert(tbl, addrinfo_to_table(res, data.host, data.service))
+
+			if res.ai_next == nil then break end
+
+			res = ffi.cast(addrinfo_ptr, res.ai_next)
+		end
+
+		--ffi.C.freeaddrinfo(out[0])
+		return tbl
+	end
+
+	function M.find_first_address(host, service, options)
+		options = options or {}
+		local info = {}
+		info.host = host
+		info.service = tostring(service)
+		info.family = options.family or "inet"
+		info.socket_type = options.socket_type or "stream"
+		info.protocol = options.protocol or "tcp"
+		info.flags = options.flags
+
+		if host == "*" then
+			info.flags = info.flags or {}
+			table.insert(info.flags, "passive")
+		end
+
+		local addrinfo, err = M.get_address_info(info)
+
+		if not addrinfo then return nil, err end
+
+		if not addrinfo[1] then
+			return nil, "no addresses found (empty address info table)"
+		end
+
+		for _, v in ipairs(addrinfo) do
+			if
+				v.family == info.family and
+				v.socket_type == info.socket_type and
+				v.protocol == info.protocol
+			then
+				return v
+			end
+		end
+
+		return addrinfo[1]
+	end
+
+	function M.host_service_toaddrinfo(host, service, family, socket_type, protocol)
+		if type(host) == "table" and host.addrinfo then return host end
+
+		return M.find_first_address(
+			host,
+			service,
+			{
+				family = family,
+				socket_type = socket_type,
+				protocol = protocol,
+			}
+		)
+	end
+
+	function M.addrinfo_for_receive(sockaddr_ptr, src_address, len, family)
+		return {
+			addrinfo = {
+				ai_addr = ffi.cast(sockaddr_ptr, src_address),
+				ai_addrlen = len,
+			},
+			family = family,
+			get_port = addrinfo_get_port,
+			get_ip = addrinfo_get_ip,
+		}
+	end
 end
 
 do
@@ -1174,25 +1236,9 @@ do
 	end
 
 	function meta:connect(host, service)
-		local res
+		local res, err = M.host_service_toaddrinfo(host, service, self.family, self.socket_type, self.protocol)
 
-		if type(host) == "table" and host.addrinfo then
-			res = host
-		else
-			local res_, err = M.find_first_address(
-				host,
-				service,
-				{
-					family = self.family,
-					socket_type = self.socket_type,
-					protocol = self.protocol,
-				}
-			)
-
-			if not res_ then return res_, err end
-
-			res = res_
-		end
+		if not res then return res, err end
 
 		local ok, err, num = socket.connect(self.fd, res.addrinfo.ai_addr, res.addrinfo.ai_addrlen)
 
@@ -1223,27 +1269,9 @@ do
 	function meta:bind(host, service)
 		if host == "*" then host = nil end
 
-		if type(service) == "number" then service = tostring(service) end
+		local res, err = M.host_service_toaddrinfo(host, service, self.family, self.socket_type, self.protocol)
 
-		local res
-
-		if type(host) == "table" and host.addrinfo then
-			res = host
-		else
-			local res_, err = M.find_first_address(
-				host,
-				service,
-				{
-					family = self.family,
-					socket_type = self.socket_type,
-					protocol = self.protocol,
-				}
-			)
-
-			if not res_ then return res_, err end
-
-			res = res_
-		end
+		if not res then return res, err end
 
 		return socket.bind(self.fd, res.addrinfo.ai_addr, res.addrinfo.ai_addrlen)
 	end
@@ -1415,15 +1443,7 @@ do
 
 			if src_address then
 				return ffi.string(buff, len),
-				{
-					addrinfo = {
-						ai_addr = ffi.cast(sockaddr_ptr, src_address),
-						ai_addrlen = len_res[0],
-					},
-					family = self.family,
-					get_port = addrinfo_get_port,
-					get_ip = addrinfo_get_ip,
-				}
+				M.addrinfo_for_receive(sockaddr_ptr, src_address, len_res[0], self.family)
 			end
 
 			return ffi.string(buff, len)
