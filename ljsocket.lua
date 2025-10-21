@@ -384,7 +384,7 @@ do
 			function socket.blocking(fd, b)
 				local ret = ioctlsocket(fd, FIONBIO, ffi.new("int[1]", b and 0 or 1))
 
-				if ret == 0 then return true end
+				if ret then return true end
 
 				return nil, socket.lasterror()
 			end
