@@ -2,6 +2,7 @@ require("test.dns_lookup_test")
 require("test.tcp_client_test")
 require("test.tcp_client_server")
 require("test.udp_client_server")
+require("test.options")
 
 require("examples.dns_lookup")
 require("examples.tcp_client_blocking")
