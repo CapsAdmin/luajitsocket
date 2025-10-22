@@ -13,7 +13,9 @@ do -- server
 
 		if data then
 			print(data)
-			assert(server:send_to(addr, "hello from server " .. os.clock()))
+			assert(data == "hello from client")
+			assert(addr:get_port())
+			assert(server:send_to(addr, "hello from server"))
 		elseif addr ~= "timeout" then
 			error(addr)
 		end
@@ -26,16 +28,26 @@ do -- client
 	assert(client:set_blocking(false))
 	local next_send = 0
 
+	local sent = false
+	local times = 0
 	function update_client()
-		if next_send < os.clock() then
-			assert(client:send_to(send_address, "hello from client " .. os.clock()))
-			next_send = os.clock() + math.random() + 0.5
+
+		if not sent then
+			assert(client:send_to(send_address, "hello from client"))
+			sent = true
 		end
 
 		local data, addr = client:receive_from()
 
 		if data then
-			print(data, addr:get_ip(), addr:get_port())
+			print(data)
+			assert(data == "hello from server")
+			assert(addr:get_port())
+			assert(client:send_to(send_address, "hello from client"))
+			times = times + 1
+			if times > 5 then
+				return true
+			end
 		elseif addr ~= "timeout" then
 			error(addr)
 		end
@@ -43,6 +55,6 @@ do -- client
 end
 
 while true do
+	if update_client() then break end
 	update_server()
-	update_client()
 end

@@ -1168,16 +1168,15 @@ do -- addrinfo
 		return addrinfos[1]
 	end
 
-	function M.addrinfo_for_receive(sockaddr_ptr, src_address, len, family)
-		return {
-			addrinfo = {
-				ai_addr = ffi.cast(sockaddr_ptr, src_address),
-				ai_addrlen = len,
-			},
-			family = family,
-			get_port = addrinfo_get_port,
-			get_ip = addrinfo_get_ip,
-		}
+	function M.addrinfo_for_receive(ai_addr, len, family)
+		-- Create a minimal addrinfo structure with the received address
+		local ai = addrinfo_out()
+		ai.ai_addr = ai_addr
+		ai.ai_addrlen = len
+		ai.ai_family = AF.strict_lookup(family)
+		
+		-- Use the existing addressinfo constructor which properly sets up the metatable
+		return M.addressinfo(ai, nil, nil)
 	end
 end
 
@@ -1483,7 +1482,7 @@ do
 
 			if src_address then
 				return ffi.string(buff, len),
-				M.addrinfo_for_receive(sockaddr_ptr, src_address, len_res[0], self.family)
+				M.addrinfo_for_receive(ffi.cast(sockaddr_ptr, src_address), len_res[0], self.family)
 			end
 
 			return ffi.string(buff, len)
