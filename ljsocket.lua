@@ -1472,6 +1472,12 @@ do
 			return len, err, num
 		end
 
+		if len == 0 then
+			-- Connection closed gracefully by remote end (FIN received)
+			if self.debug then print(tostring(self), ": connection closed by peer") end
+			return nil, "closed", 0
+		end
+
 		if len > 0 then
 			if self.debug then print(tostring(self), ": received ", len, " bytes") end
 

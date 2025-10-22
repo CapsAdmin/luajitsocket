@@ -1,5 +1,7 @@
 local socket = require("ljsocket")
 local port = 8080
+local update_server
+local update_client
 
 do -- server
 	local info = assert(
@@ -11,6 +13,7 @@ do -- server
 	assert(server:set_blocking(false))
 	assert(server:bind(info))
 	assert(server:listen())
+	print("server: listening on port", port)
 	local current_client = nil
 
 	function update_server()
@@ -19,18 +22,23 @@ do -- server
 		if client then
 			current_client = client
 			assert(client:set_blocking(false))
+			print("server: client connected")
 		elseif err ~= "timeout" then
 			error(err)
 		end
 
 		if current_client then
 			local str, err = current_client:receive()
-
 			if str then
+				print("server: received", str)
 				assert(str == "hello")
-				current_client:send(str)
+				assert(current_client:send(str))
+				print("server: sent", str)
 			elseif err == "closed" then
-				current_client:close()
+				print("server: client disconnected")
+				assert(current_client:close())
+				current_client = nil
+				return true
 			elseif err ~= "timeout" then
 				error(err)
 			end
@@ -42,18 +50,22 @@ do -- client
 	local client = assert(socket.create("inet", "stream", "tcp"))
 	assert(client:connect("localhost", port))
 	assert(client:set_blocking(false))
+	print("client: connected to server on port", port)
 	local sent_message = false
 
 	function update_client()
 		if client:is_connected() then
 			if not sent_message then
+				print("client: sending ", "hello")
 				assert(client:send("hello"))
 				sent_message = true
 			else
-				local data, err = client:receive()
+				local str, err = client:receive()
 
-				if data then
-					assert(data == "hello")
+				if str then
+					print("client: received", str)
+					assert(str == "hello")
+					print("client: closing")
 					client:close()
 				elseif err ~= "timeout" then
 					error(err)
@@ -63,7 +75,13 @@ do -- client
 	end
 end
 
-while true do
-	update_server()
+local iterations = 0
+while iterations < 1000 do
 	update_client()
+	if update_server() then break end
+	iterations = iterations + 1
+end
+
+if iterations == 1000 then
+	error("test did not complete in time")
 end
