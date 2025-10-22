@@ -878,6 +878,16 @@ do
 		e.SO_KEEPALIVE = 0x0008
 		e.SO_DONTROUTE = 0x0010
 		e.SO_BROADCAST = 0x0020
+		e.SO_LINGER = 0x0080
+		e.SO_OOBINLINE = 0x0100
+		e.SO_SNDBUF = 0x1001
+		e.SO_RCVBUF = 0x1002
+		e.SO_SNDLOWAT = 0x1003
+		e.SO_RCVLOWAT = 0x1004
+		e.SO_SNDTIMEO = 0x1005
+		e.SO_RCVTIMEO = 0x1006
+		e.SO_ERROR = 0x1007
+		e.SO_TYPE = 0x1008
 		errno.EINVAL = 22
 		errno.EAGAIN = 35
 		errno.EWOULDBLOCK = errno.EAGAIN
@@ -1253,6 +1263,54 @@ do
 		)
 	end
 
+	function meta:get_option(key, level)
+		level = level or "socket"
+
+		local env = SO
+
+		if level == "tcp" then env = TCP end
+
+		local val
+		local size
+
+		-- Determine the appropriate type and size for the option
+		if key:lower() == "rcvtimeo" or key:lower() == "sndtimeo" then
+			if ffi.os == "Windows" then
+				val = ffi.new("int[1]")
+				size = ffi.new("uint32_t[1]", ffi.sizeof("int"))
+			else
+				val = timeval()
+				size = ffi.new("uint32_t[1]", ffi.sizeof(timeval))
+			end
+		else
+			-- Default to int for most socket options
+			val = ffi.new("int[1]")
+			size = ffi.new("uint32_t[1]", ffi.sizeof("int"))
+		end
+
+		local ok, err, num = socket.getsockopt(
+			self.fd,
+			SOL.strict_lookup(level),
+			env.strict_lookup(key),
+			ffi.cast("void *", val),
+			size
+		)
+
+		if not ok then return ok, err, num end
+
+		-- Convert the result based on the option type
+		if key:lower() == "rcvtimeo" or key:lower() == "sndtimeo" then
+			if ffi.os == "Windows" then
+				return val[0]
+			else
+				return val.tv_usec / 1000
+			end
+		else
+			-- Return as number for most options
+			return val[0]
+		end
+	end
+
 	function meta:settimeout(t)
 		self:set_option("rcvtimeo", t)
 	end
@@ -1475,5 +1533,9 @@ do
 		return nil, err, num
 	end
 end
+
+M.e = e
+M.errno = errno
+M.socket = socket
 
 return M
