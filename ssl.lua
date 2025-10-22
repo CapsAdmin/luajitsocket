@@ -1,57 +1,75 @@
+-- these have mostly all been thrown up by ai and likely need fixing
+
 local ffi = require("ffi")
 local socket = require("ljsocket")
 local ssl = {}
 local loaders = {
 	function()
-	-- Windows Schannel implementation
-	local secur32 = ffi.load("Secur32.dll")
-	local ws2 = ffi.load("ws2_32")
-	
-	-- Constants
-	local SECPKG_CRED_OUTBOUND = 2
-	local SECURITY_NATIVE_DREP = 0x00000010
-	local SECBUFFER_VERSION = 0
-	local SECBUFFER_EMPTY = 0
-	local SECBUFFER_DATA = 1
-	local SECBUFFER_TOKEN = 2
-	local SECBUFFER_ALERT = 17
-	local SECBUFFER_EXTRA = 5
-	local ISC_REQ_SEQUENCE_DETECT = 0x00000008
-	local ISC_REQ_REPLAY_DETECT = 0x00000004
-	local ISC_REQ_CONFIDENTIALITY = 0x00000010
-	local ISC_REQ_ALLOCATE_MEMORY = 0x00000100
-	local ISC_REQ_STREAM = 0x00008000
-	local ISC_REQ_USE_SUPPLIED_CREDS = 0x00000080
-	local ISC_REQ_MANUAL_CRED_VALIDATION = 0x00080000
-	
-	local SEC_E_OK = 0x00000000
-	local SEC_I_CONTINUE_NEEDED = 0x00090312
-	local SEC_E_INCOMPLETE_MESSAGE = 0x80090318
-	local SEC_I_CONTEXT_EXPIRED = 0x00090317
-	local SEC_E_INVALID_HANDLE = 0x80090301
-	
-	-- Types
-	local SECURITY_INTEGER = ffi.typeof("struct { uint32_t LowPart; int32_t HighPart; }")
-	local SecHandle = ffi.typeof("struct { uintptr_t dwLower; uintptr_t dwUpper; }")
-	local SecBuffer = ffi.typeof("struct { uint32_t cbBuffer; uint32_t BufferType; void* pvBuffer; }")
-	local SecBufferDesc = ffi.typeof("struct { uint32_t ulVersion; uint32_t cBuffers; $ *pBuffers; }", SecBuffer)
-	local SecBuffer1 = ffi.typeof("$[1]", SecBuffer)
-	local SecBuffer2 = ffi.typeof("$[2]", SecBuffer)
-	local SecBuffer4 = ffi.typeof("$[4]", SecBuffer)
-	
-	-- Function declarations
-	ffi.cdef("int AcquireCredentialsHandleA(const char*, const char*, uint32_t, void*, void*, void*, void*, $*, $*)", SecHandle, SECURITY_INTEGER)
-	ffi.cdef("int InitializeSecurityContextA($*, $*, const char*, uint32_t, uint32_t, uint32_t, $*, uint32_t, $*, $*, uint32_t*, $*)", 
-		SecHandle, SecHandle, SecBufferDesc, SecHandle, SecBufferDesc, SECURITY_INTEGER)
-	ffi.cdef("int EncryptMessage($*, uint32_t, $*, uint32_t)", SecHandle, SecBufferDesc)
-	ffi.cdef("int DecryptMessage($*, $*, uint32_t, uint32_t*)", SecHandle, SecBufferDesc)
-	ffi.cdef("int DeleteSecurityContext($*)", SecHandle)
-	ffi.cdef("int FreeCredentialsHandle($*)", SecHandle)
-	ffi.cdef("int FreeContextBuffer(void*)")
-	ffi.cdef("int WSAGetLastError()")
-	ffi.cdef("int recv(uintptr_t, void*, int, int)")
-	ffi.cdef("int send(uintptr_t, const void*, int, int)")
-	ffi.cdef([[
+		-- Windows Schannel implementation
+		local secur32 = ffi.load("Secur32.dll")
+		local ws2 = ffi.load("ws2_32")
+		-- Constants
+		local SECPKG_CRED_OUTBOUND = 2
+		local SECURITY_NATIVE_DREP = 0x00000010
+		local SECBUFFER_VERSION = 0
+		local SECBUFFER_EMPTY = 0
+		local SECBUFFER_DATA = 1
+		local SECBUFFER_TOKEN = 2
+		local SECBUFFER_ALERT = 17
+		local SECBUFFER_EXTRA = 5
+		local SECBUFFER_STREAM_HEADER = 7
+		local SECBUFFER_STREAM_TRAILER = 6
+		local SECPKG_ATTR_STREAM_SIZES = 4
+		local ISC_REQ_SEQUENCE_DETECT = 0x00000008
+		local ISC_REQ_REPLAY_DETECT = 0x00000004
+		local ISC_REQ_CONFIDENTIALITY = 0x00000010
+		local ISC_REQ_ALLOCATE_MEMORY = 0x00000100
+		local ISC_REQ_STREAM = 0x00008000
+		local ISC_REQ_USE_SUPPLIED_CREDS = 0x00000080
+		local ISC_REQ_MANUAL_CRED_VALIDATION = 0x00080000
+		local SEC_E_OK = 0x00000000
+		local SEC_I_CONTINUE_NEEDED = 0x00090312
+		local SEC_E_INCOMPLETE_MESSAGE = 0x80090318
+		local SEC_I_CONTEXT_EXPIRED = 0x00090317
+		local SEC_E_INVALID_HANDLE = 0x80090301
+		-- Types
+		local SECURITY_INTEGER = ffi.typeof("struct { uint32_t LowPart; int32_t HighPart; }")
+		local SecHandle = ffi.typeof("struct { uintptr_t dwLower; uintptr_t dwUpper; }")
+		local SecBuffer = ffi.typeof("struct { uint32_t cbBuffer; uint32_t BufferType; void* pvBuffer; }")
+		local SecBufferDesc = ffi.typeof("struct { uint32_t ulVersion; uint32_t cBuffers; $ *pBuffers; }", SecBuffer)
+		local SecBuffer1 = ffi.typeof("$[1]", SecBuffer)
+		local SecBuffer2 = ffi.typeof("$[2]", SecBuffer)
+		local SecBuffer4 = ffi.typeof("$[4]", SecBuffer)
+		local SecPkgContext_StreamSizes = ffi.typeof([[struct {
+			uint32_t cbHeader;
+			uint32_t cbTrailer;
+			uint32_t cbMaximumMessage;
+			uint32_t cBuffers;
+			uint32_t cbBlockSize;
+		}]])
+		ffi.cdef("int recv(uintptr_t, void*, int, int)")
+		ffi.cdef("int send(uintptr_t, const void*, int, int)")
+		ffi.cdef(
+			"uint32_t AcquireCredentialsHandleA(const char*, const char*, uint32_t, void*, void*, void*, void*, $*, $*)",
+			SecHandle,
+			SECURITY_INTEGER
+		)
+		ffi.cdef(
+			"uint32_t InitializeSecurityContextA($*, $*, const char*, uint32_t, uint32_t, uint32_t, $*, uint32_t, $*, $*, uint32_t*, $*)",
+			SecHandle,
+			SecHandle,
+			SecBufferDesc,
+			SecHandle,
+			SecBufferDesc,
+			SECURITY_INTEGER
+		)
+		ffi.cdef("uint32_t EncryptMessage($*, uint32_t, $*, uint32_t)", SecHandle, SecBufferDesc)
+		ffi.cdef("uint32_t DecryptMessage($*, $*, uint32_t, uint32_t*)", SecHandle, SecBufferDesc)
+		ffi.cdef("uint32_t DeleteSecurityContext($*)", SecHandle)
+		ffi.cdef("uint32_t FreeCredentialsHandle($*)", SecHandle)
+		ffi.cdef("uint32_t FreeContextBuffer(void*)")
+		ffi.cdef("uint32_t QueryContextAttributesA($*, uint32_t, void*)", SecHandle)
+		ffi.cdef([[
 		uint32_t FormatMessageA(
 			uint32_t dwFlags,
 			const void* lpSource,
@@ -62,319 +80,361 @@ local loaders = {
 			void* Arguments
 		);
 	]])
-	
-	-- Error message translation
-	local FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000
-	local FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200
-	local kernel32 = ffi.load("kernel32")
-	
-	-- Security status code names lookup
-	local security_status_names = {
-		[0x00000000] = "SEC_E_OK",
-		[0x00090312] = "SEC_I_CONTINUE_NEEDED",
-		[0x80090318] = "SEC_E_INCOMPLETE_MESSAGE",
-		[0x00090317] = "SEC_I_CONTEXT_EXPIRED",
-		[0x80090301] = "SEC_E_INVALID_HANDLE",
-		[0x80090300] = "SEC_E_INSUFFICIENT_MEMORY",
-		[0x80090302] = "SEC_E_INTERNAL_ERROR",
-		[0x80090303] = "SEC_E_INVALID_TOKEN",
-		[0x80090304] = "SEC_E_LOGON_DENIED",
-		[0x80090305] = "SEC_E_NO_CREDENTIALS",
-		[0x80090308] = "SEC_E_TARGET_UNKNOWN",
-		[0x80090311] = "SEC_E_UNSUPPORTED_FUNCTION",
-		[0x80090321] = "SEC_E_WRONG_PRINCIPAL",
-		[0x80090325] = "SEC_E_UNTRUSTED_ROOT",
-		[0x8009030C] = "SEC_E_MESSAGE_ALTERED",
-		[0x8009030D] = "SEC_E_OUT_OF_SEQUENCE",
-		[0x8009030E] = "SEC_E_NO_AUTHENTICATING_AUTHORITY",
-		[0x80090326] = "SEC_E_CERT_UNKNOWN",
-		[0x80090327] = "SEC_E_CERT_EXPIRED",
-	}
-	
-	local function get_wsa_error_string(err_code)
-		local buffer = ffi.new("char[512]")
-		local len = kernel32.FormatMessageA(
-			bit.bor(FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS),
-			nil,
-			err_code,
-			0, -- Default language
-			buffer,
-			512,
-			nil
-		)
-		
-		if len > 0 then
-			local msg = ffi.string(buffer, len)
-			-- Remove trailing newlines
-			msg = msg:gsub("[\r\n]+$", "")
-			return msg
-		end
-		
-		return string.format("WSA Error %d", err_code)
-	end
-	
-	local function get_security_error_string(status)
-		local status_name = security_status_names[status] or string.format("0x%08X", status)
-		local buffer = ffi.new("char[512]")
-		local len = kernel32.FormatMessageA(
-			bit.bor(FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS),
-			nil,
-			status,
-			0, -- Default language
-			buffer,
-			512,
-			nil
-		)
-		
-		if len > 0 then
-			local msg = ffi.string(buffer, len)
-			msg = msg:gsub("[\r\n]+$", "")
-			return string.format("%s: %s", status_name, msg)
-		end
-		
-		return status_name
-	end
-	
-	local hCreds = ffi.new(SecHandle)
-	local hContext = ffi.new(SecHandle)
-	local tsExpiry = ffi.new(SECURITY_INTEGER)
-	local state = "init"
-	local recv_buffer = ffi.new("uint8_t[?]", 65536)
-	local recv_len = 0
-	local stored_fd = nil
-	
-	-- Initialize credentials
-	local status = secur32.AcquireCredentialsHandleA(
-		nil, "Microsoft Unified Security Protocol Provider",
-		SECPKG_CRED_OUTBOUND, nil, nil, nil, nil, hCreds, tsExpiry)
-	
-	if status ~= SEC_E_OK then
-		error("AcquireCredentialsHandle failed: " .. get_security_error_string(status))
-	end
-	
-	local function connect(fd, host)
-		stored_fd = fd
-		
-		if state ~= "init" then
-			return true
-		end
-		
-		local dwSSPIFlags = bit.bor(ISC_REQ_SEQUENCE_DETECT, ISC_REQ_REPLAY_DETECT,
-			ISC_REQ_CONFIDENTIALITY, ISC_REQ_ALLOCATE_MEMORY, ISC_REQ_STREAM,
-			ISC_REQ_MANUAL_CRED_VALIDATION)
-		
-		local host_cstr = host and ffi.cast("const char*", host) or nil
-		local context_initialized = false
-		
-		-- TLS handshake loop
-		while true do
-			local outBuffers = ffi.new(SecBuffer1)
-			outBuffers[0].BufferType = SECBUFFER_TOKEN
-			outBuffers[0].cbBuffer = 0
-			outBuffers[0].pvBuffer = nil
-			
-			local outBufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 1, outBuffers)
-			
-			local inBuffers = nil
-			local inBufferDesc = nil
-			local contextAttribs = ffi.new("uint32_t[1]")
-			
-			if recv_len > 0 then
-				inBuffers = ffi.new(SecBuffer2)
-				inBuffers[0].BufferType = SECBUFFER_TOKEN
-				inBuffers[0].cbBuffer = recv_len
-				inBuffers[0].pvBuffer = recv_buffer
-				inBuffers[1].BufferType = SECBUFFER_EMPTY
-				inBuffers[1].cbBuffer = 0
-				inBuffers[1].pvBuffer = nil
-				inBufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 2, inBuffers)
+		-- Error message translation
+		local FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000
+		local FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200
+		local kernel32 = ffi.load("kernel32")
+		-- Security status code names lookup
+		local security_status_names = {
+			[0x00000000] = "SEC_E_OK",
+			[0x00090312] = "SEC_I_CONTINUE_NEEDED",
+			[0x80090318] = "SEC_E_INCOMPLETE_MESSAGE",
+			[0x00090317] = "SEC_I_CONTEXT_EXPIRED",
+			[0x80090301] = "SEC_E_INVALID_HANDLE",
+			[0x80090300] = "SEC_E_INSUFFICIENT_MEMORY",
+			[0x80090302] = "SEC_E_INTERNAL_ERROR",
+			[0x80090303] = "SEC_E_INVALID_TOKEN",
+			[0x80090304] = "SEC_E_LOGON_DENIED",
+			[0x80090305] = "SEC_E_NO_CREDENTIALS",
+			[0x80090308] = "SEC_E_TARGET_UNKNOWN",
+			[0x80090311] = "SEC_E_UNSUPPORTED_FUNCTION",
+			[0x80090321] = "SEC_E_WRONG_PRINCIPAL",
+			[0x80090325] = "SEC_E_UNTRUSTED_ROOT",
+			[0x8009030C] = "SEC_E_MESSAGE_ALTERED",
+			[0x8009030D] = "SEC_E_OUT_OF_SEQUENCE",
+			[0x8009030E] = "SEC_E_NO_AUTHENTICATING_AUTHORITY",
+			[0x80090326] = "SEC_E_CERT_UNKNOWN",
+			[0x80090327] = "SEC_E_CERT_EXPIRED",
+		}
+
+		local function get_wsa_error_string(err_code)
+			local buffer = ffi.new("char[512]")
+			local len = kernel32.FormatMessageA(
+				bit.bor(FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS),
+				nil,
+				err_code,
+				0, -- Default language
+				buffer,
+				512,
+				nil
+			)
+
+			if len > 0 then
+				local msg = ffi.string(buffer, len)
+				-- Remove trailing newlines
+				msg = msg:gsub("[\r\n]+$", "")
+				return msg
 			end
-			
-			local hContextPtr = context_initialized and hContext or nil
-			
-			status = secur32.InitializeSecurityContextA(
-				hCreds, hContextPtr, host_cstr, dwSSPIFlags, 0, SECURITY_NATIVE_DREP,
-				inBufferDesc, 0, hContext, outBufferDesc, contextAttribs, tsExpiry)
-			
-			context_initialized = true
-			
-			if status == SEC_E_OK or status == SEC_I_CONTINUE_NEEDED then
-				-- Send output token if any
-				if outBuffers[0].cbBuffer > 0 and outBuffers[0].pvBuffer ~= nil then
-					local sent = ws2.send(fd, outBuffers[0].pvBuffer, outBuffers[0].cbBuffer, 0)
-					secur32.FreeContextBuffer(outBuffers[0].pvBuffer)
-					
-					if sent <= 0 then
-						return nil, "Failed to send handshake data"
+
+			return string.format("WSA Error %d", err_code)
+		end
+
+		local function get_security_error_string(status)
+			local status_name = security_status_names[status] or string.format("0x%08X", status)
+			local buffer = ffi.new("char[512]")
+			local len = kernel32.FormatMessageA(
+				bit.bor(FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS),
+				nil,
+				status,
+				0, -- Default language
+				buffer,
+				512,
+				nil
+			)
+
+			if len > 0 then
+				local msg = ffi.string(buffer, len)
+				msg = msg:gsub("[\r\n]+$", "")
+				return string.format("%s: %s", status_name, msg)
+			end
+
+			return status_name
+		end
+
+		local hCreds = ffi.new(SecHandle)
+		local hContext = ffi.new(SecHandle)
+		local tsExpiry = ffi.new(SECURITY_INTEGER)
+		local state = "init"
+		local recv_buffer = ffi.new("uint8_t[?]", 65536)
+		local recv_len = 0
+		local stored_fd = nil
+		local stream_sizes = nil
+		-- Initialize credentials
+		local status = secur32.AcquireCredentialsHandleA(
+			nil,
+			"Microsoft Unified Security Protocol Provider",
+			SECPKG_CRED_OUTBOUND,
+			nil,
+			nil,
+			nil,
+			nil,
+			hCreds,
+			tsExpiry
+		)
+
+		if status ~= SEC_E_OK then
+			error("AcquireCredentialsHandle failed: " .. get_security_error_string(status))
+		end
+
+		local function connect(fd, host)
+			stored_fd = fd
+
+			if state ~= "init" then return true end
+
+			local dwSSPIFlags = bit.bor(
+				ISC_REQ_SEQUENCE_DETECT,
+				ISC_REQ_REPLAY_DETECT,
+				ISC_REQ_CONFIDENTIALITY,
+				ISC_REQ_ALLOCATE_MEMORY,
+				ISC_REQ_STREAM,
+				ISC_REQ_MANUAL_CRED_VALIDATION
+			)
+			local host_cstr = host and ffi.cast("const char*", host) or nil
+			local context_initialized = false
+
+			-- TLS handshake loop
+			while true do
+				local outBuffers = ffi.new(SecBuffer1)
+				outBuffers[0].BufferType = SECBUFFER_TOKEN
+				outBuffers[0].cbBuffer = 0
+				outBuffers[0].pvBuffer = nil
+				local outBufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 1, outBuffers)
+				local inBuffers = nil
+				local inBufferDesc = nil
+				local contextAttribs = ffi.new("uint32_t[1]")
+
+				if recv_len > 0 then
+					inBuffers = ffi.new(SecBuffer2)
+					inBuffers[0].BufferType = SECBUFFER_TOKEN
+					inBuffers[0].cbBuffer = recv_len
+					inBuffers[0].pvBuffer = recv_buffer
+					inBuffers[1].BufferType = SECBUFFER_EMPTY
+					inBuffers[1].cbBuffer = 0
+					inBuffers[1].pvBuffer = nil
+					inBufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 2, inBuffers)
+				end
+
+				local hContextPtr = context_initialized and hContext or nil
+				status = secur32.InitializeSecurityContextA(
+					hCreds,
+					hContextPtr,
+					host_cstr,
+					dwSSPIFlags,
+					0,
+					SECURITY_NATIVE_DREP,
+					inBufferDesc,
+					0,
+					hContext,
+					outBufferDesc,
+					contextAttribs,
+					tsExpiry
+				)
+				context_initialized = true
+
+				if status == SEC_E_OK or status == SEC_I_CONTINUE_NEEDED then
+					-- Send output token if any
+					if outBuffers[0].cbBuffer > 0 and outBuffers[0].pvBuffer ~= nil then
+						local sent = ws2.send(fd, outBuffers[0].pvBuffer, outBuffers[0].cbBuffer, 0)
+						secur32.FreeContextBuffer(outBuffers[0].pvBuffer)
+
+						if sent <= 0 then return nil, "Failed to send handshake data" end
+					end
+
+					-- Check for extra data
+					if
+						inBuffers and
+						inBuffers[1].BufferType == SECBUFFER_EXTRA and
+						inBuffers[1].cbBuffer > 0
+					then
+						local extra_offset = recv_len - inBuffers[1].cbBuffer
+						ffi.copy(recv_buffer, recv_buffer + extra_offset, inBuffers[1].cbBuffer)
+						recv_len = inBuffers[1].cbBuffer
+					else
+						recv_len = 0
+					end
+
+					if status == SEC_E_OK then
+						-- Query actual stream sizes from Schannel
+						stream_sizes = ffi.new(SecPkgContext_StreamSizes)
+						local query_status = secur32.QueryContextAttributesA(hContext, SECPKG_ATTR_STREAM_SIZES, stream_sizes)
+
+						if query_status ~= SEC_E_OK then
+							return nil,
+							"QueryContextAttributes failed: " .. get_security_error_string(query_status)
+						end
+
+						state = "connected"
+						return true
+					end
+
+					-- SEC_I_CONTINUE_NEEDED - need to receive server response
+					local bytes = ws2.recv(fd, recv_buffer + recv_len, 65536 - recv_len, 0)
+
+					if bytes > 0 then
+						recv_len = recv_len + bytes
+					elseif bytes == 0 then
+						return nil, "Connection closed during handshake"
+					else
+						local err = ffi.C.WSAGetLastError()
+						return nil, "recv failed: " .. get_wsa_error_string(err)
+					end
+				elseif status == SEC_E_INCOMPLETE_MESSAGE then
+					-- Need more data
+					local bytes = ws2.recv(fd, recv_buffer + recv_len, 65536 - recv_len, 0)
+
+					if bytes > 0 then
+						recv_len = recv_len + bytes
+					elseif bytes == 0 then
+						return nil, "Connection closed during handshake"
+					else
+						local err = ffi.C.WSAGetLastError()
+						return nil, "recv failed: " .. get_wsa_error_string(err)
+					end
+				else
+					return nil, "Handshake failed: " .. get_security_error_string(status)
+				end
+			end
+		end
+
+		local function send(data)
+			if state ~= "connected" then return nil, "Not connected" end
+
+			if not stream_sizes then return nil, "Stream sizes not initialized" end
+
+			-- Allocate buffer with correct sizes from Schannel
+			local msg_buffer = ffi.new("uint8_t[?]", stream_sizes.cbHeader + #data + stream_sizes.cbTrailer)
+			ffi.copy(msg_buffer + stream_sizes.cbHeader, data, #data)
+			local buffers = ffi.new(SecBuffer4)
+			buffers[0].BufferType = SECBUFFER_STREAM_HEADER
+			buffers[0].cbBuffer = stream_sizes.cbHeader
+			buffers[0].pvBuffer = msg_buffer
+			buffers[1].BufferType = SECBUFFER_DATA
+			buffers[1].cbBuffer = #data
+			buffers[1].pvBuffer = msg_buffer + stream_sizes.cbHeader
+			buffers[2].BufferType = SECBUFFER_STREAM_TRAILER
+			buffers[2].cbBuffer = stream_sizes.cbTrailer
+			buffers[2].pvBuffer = msg_buffer + stream_sizes.cbHeader + #data
+			buffers[3].BufferType = SECBUFFER_EMPTY
+			buffers[3].cbBuffer = 0
+			buffers[3].pvBuffer = nil
+			local bufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 4, buffers)
+			status = secur32.EncryptMessage(hContext, 0, bufferDesc, 0)
+
+			if status ~= SEC_E_OK then
+				return nil, "EncryptMessage failed: " .. get_security_error_string(status)
+			end
+
+			local total_len = buffers[0].cbBuffer + buffers[1].cbBuffer + buffers[2].cbBuffer
+			local sent = ws2.send(stored_fd, msg_buffer, total_len, 0)
+
+			if sent <= 0 then return nil, "Send failed" end
+
+			return #data
+		end
+
+		local function receive(buffer, max_size)
+			if state ~= "connected" then return nil, "Not connected" end
+
+			-- Loop until we have a complete TLS record to decrypt
+			while true do
+				-- Need to receive more encrypted data if buffer is empty
+				if recv_len == 0 then
+					local bytes = ws2.recv(stored_fd, recv_buffer, 65536, 0)
+
+					if bytes > 0 then
+						recv_len = bytes
+					elseif bytes == 0 then
+						return ""
+					else
+						return nil, "timeout"
 					end
 				end
-				
-				-- Check for extra data
-				if inBuffers and inBuffers[1].BufferType == SECBUFFER_EXTRA and inBuffers[1].cbBuffer > 0 then
-					local extra_offset = recv_len - inBuffers[1].cbBuffer
-					ffi.copy(recv_buffer, recv_buffer + extra_offset, inBuffers[1].cbBuffer)
-					recv_len = inBuffers[1].cbBuffer
-				else
-					recv_len = 0
-				end
-				
-				if status == SEC_E_OK then
-					state = "connected"
-					return true
-				end
-				
-				-- SEC_I_CONTINUE_NEEDED - need to receive server response
-				local bytes = ws2.recv(fd, recv_buffer + recv_len, 65536 - recv_len, 0)
-				if bytes > 0 then
-					recv_len = recv_len + bytes
-				elseif bytes == 0 then
-					return nil, "Connection closed during handshake"
-				else
-					local err = ffi.C.WSAGetLastError()
-					return nil, "recv failed: " .. get_wsa_error_string(err)
-				end
-			elseif status == SEC_E_INCOMPLETE_MESSAGE then
-				-- Need more data
-				local bytes = ws2.recv(fd, recv_buffer + recv_len, 65536 - recv_len, 0)
-				if bytes > 0 then
-					recv_len = recv_len + bytes
-				elseif bytes == 0 then
-					return nil, "Connection closed during handshake"
-				else
-					local err = ffi.C.WSAGetLastError()
-					return nil, "recv failed: " .. get_wsa_error_string(err)
-				end
-			else
-				return nil, "Handshake failed: " .. get_security_error_string(status)
-			end
-		end
-	end
-	
-	local function send(data)
-		if state ~= "connected" then
-			return nil, "Not connected"
-		end
-		
-		local sizes = ffi.new("struct { uint32_t cbMaximumMessage; uint32_t cBuffers; uint32_t cbBlockSize; uint32_t cbSecurityTrailer; }")
-		
-		-- Query buffer sizes (normally would call QueryContextAttributes)
-		sizes.cbSecurityTrailer = 50
-		sizes.cbBlockSize = 16384
-		
-		local msg_buffer = ffi.new("uint8_t[?]", sizes.cbSecurityTrailer + #data + sizes.cbBlockSize)
-		ffi.copy(msg_buffer + sizes.cbSecurityTrailer, data, #data)
-		
-		local buffers = ffi.new(SecBuffer4)
-		buffers[0].BufferType = SECBUFFER_EMPTY
-		buffers[0].cbBuffer = sizes.cbSecurityTrailer
-		buffers[0].pvBuffer = msg_buffer
-		buffers[1].BufferType = SECBUFFER_DATA
-		buffers[1].cbBuffer = #data
-		buffers[1].pvBuffer = msg_buffer + sizes.cbSecurityTrailer
-		buffers[2].BufferType = SECBUFFER_EMPTY
-		buffers[2].cbBuffer = sizes.cbBlockSize
-		buffers[2].pvBuffer = msg_buffer + sizes.cbSecurityTrailer + #data
-		buffers[3].BufferType = SECBUFFER_EMPTY
-		buffers[3].cbBuffer = 0
-		buffers[3].pvBuffer = nil
-		
-		local bufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 4, buffers)
-		
-		status = secur32.EncryptMessage(hContext, 0, bufferDesc, 0)
-		if status ~= SEC_E_OK then
-			return nil, "EncryptMessage failed: " .. get_security_error_string(status)
-		end
-		
-		local total_len = buffers[0].cbBuffer + buffers[1].cbBuffer + buffers[2].cbBuffer
-		local sent = ws2.send(stored_fd, msg_buffer, total_len, 0)
-		
-		if sent <= 0 then
-			return nil, "Send failed"
-		end
-		
-		return #data
-	end
-	
-	local function receive(buffer, max_size)
-		if state ~= "connected" then
-			return nil, "Not connected"
-		end
-		
-		if recv_len == 0 then
-			local bytes = ws2.recv(stored_fd, recv_buffer, 65536, 0)
-			if bytes > 0 then
-				recv_len = bytes
-			elseif bytes == 0 then
-				return ""
-			else
-				return nil, "timeout"
-			end
-		end
-		
-		local buffers = ffi.new(SecBuffer4)
-		buffers[0].BufferType = SECBUFFER_DATA
-		buffers[0].cbBuffer = recv_len
-		buffers[0].pvBuffer = recv_buffer
-		buffers[1].BufferType = SECBUFFER_EMPTY
-		buffers[2].BufferType = SECBUFFER_EMPTY
-		buffers[3].BufferType = SECBUFFER_EMPTY
-		
-		local bufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 4, buffers)
-		
-		status = secur32.DecryptMessage(hContext, bufferDesc, 0, nil)
-		
-		if status == SEC_E_OK or status == SEC_I_CONTEXT_EXPIRED then
-			-- Find data buffer
-			for i = 0, 3 do
-				if buffers[i].BufferType == SECBUFFER_DATA then
-					local data_len = math.min(buffers[i].cbBuffer, max_size)
-					ffi.copy(buffer, buffers[i].pvBuffer, data_len)
-					
-					-- Handle extra data
-					recv_len = 0
-					for j = 0, 3 do
-						if buffers[j].BufferType == SECBUFFER_EXTRA then
-							local extra_offset = recv_len
-							for k = 0, j do
-								extra_offset = extra_offset + buffers[k].cbBuffer
-							end
-							ffi.copy(recv_buffer, recv_buffer + extra_offset, buffers[j].cbBuffer)
-							recv_len = buffers[j].cbBuffer
-							break
+
+				-- Set up buffers for DecryptMessage
+				local buffers = ffi.new(SecBuffer4)
+				buffers[0].BufferType = SECBUFFER_DATA
+				buffers[0].cbBuffer = recv_len
+				buffers[0].pvBuffer = recv_buffer
+				-- Initialize remaining buffers properly
+				buffers[1].BufferType = SECBUFFER_EMPTY
+				buffers[1].cbBuffer = 0
+				buffers[1].pvBuffer = nil
+				buffers[2].BufferType = SECBUFFER_EMPTY
+				buffers[2].cbBuffer = 0
+				buffers[2].pvBuffer = nil
+				buffers[3].BufferType = SECBUFFER_EMPTY
+				buffers[3].cbBuffer = 0
+				buffers[3].pvBuffer = nil
+				local bufferDesc = ffi.new(SecBufferDesc, SECBUFFER_VERSION, 4, buffers)
+				status = secur32.DecryptMessage(hContext, bufferDesc, 0, nil)
+
+				if status == SEC_E_OK or status == SEC_I_CONTEXT_EXPIRED then
+					-- Find the decrypted data buffer
+					local data_buffer_idx = -1
+					local extra_buffer_idx = -1
+
+					for i = 0, 3 do
+						if buffers[i].BufferType == SECBUFFER_DATA then
+							data_buffer_idx = i
+						elseif buffers[i].BufferType == SECBUFFER_EXTRA then
+							extra_buffer_idx = i
 						end
 					end
-					
-					return ffi.string(buffer, data_len)
+
+					if data_buffer_idx >= 0 then
+						local data_len = math.min(buffers[data_buffer_idx].cbBuffer, max_size)
+						ffi.copy(buffer, buffers[data_buffer_idx].pvBuffer, data_len)
+
+						-- Handle extra encrypted data that wasn't part of this message
+						if extra_buffer_idx >= 0 and buffers[extra_buffer_idx].cbBuffer > 0 then
+							-- Move extra data to beginning of buffer for next decrypt
+							ffi.copy(
+								recv_buffer,
+								buffers[extra_buffer_idx].pvBuffer,
+								buffers[extra_buffer_idx].cbBuffer
+							)
+							recv_len = buffers[extra_buffer_idx].cbBuffer
+						else
+							recv_len = 0
+						end
+
+						return ffi.string(buffer, data_len)
+					end
+
+					return ""
+				elseif status == SEC_E_INCOMPLETE_MESSAGE then
+					-- Need more data - append to existing buffer and continue loop
+					local bytes = ws2.recv(stored_fd, recv_buffer + recv_len, 65536 - recv_len, 0)
+
+					if bytes > 0 then
+						recv_len = recv_len + bytes
+					-- Continue loop to try decrypting again
+					elseif bytes == 0 then
+						return nil, "Connection closed while waiting for complete message"
+					else
+						return nil, "recv failed while waiting for complete message"
+					end
+				else
+					return nil, "DecryptMessage failed: " .. get_security_error_string(status)
 				end
 			end
-			return ""
-		elseif status == SEC_E_INCOMPLETE_MESSAGE then
-			local bytes = ws2.recv(stored_fd, recv_buffer + recv_len, 65536 - recv_len, 0)
-			if bytes > 0 then
-				recv_len = recv_len + bytes
-				return nil, "timeout"
-			else
-				return nil, "timeout"
+		end
+
+		local function close()
+			if hContext.dwLower ~= 0 or hContext.dwUpper ~= 0 then
+				secur32.DeleteSecurityContext(hContext)
 			end
-		else
-			return nil, "DecryptMessage failed: " .. get_security_error_string(status)
+
+			secur32.FreeCredentialsHandle(hCreds)
 		end
-	end
-	
-	local function close()
-		if hContext.dwLower ~= 0 or hContext.dwUpper ~= 0 then
-			secur32.DeleteSecurityContext(hContext)
-		end
-		secur32.FreeCredentialsHandle(hCreds)
-	end
-	
-	return {
-		connect = connect,
-		send = send,
-		receive = receive,
-		close = close,
-	}
-end,
+
+		return {
+			connect = connect,
+			send = send,
+			receive = receive,
+			close = close,
+		}
+	end,
 	function()
 		local lib = require("tls")
 
