@@ -1,7 +1,7 @@
 local socket = require("ljsocket")
 local host = "www.google.com"
 local socket = assert(socket.create("inet", "stream", "tcp"))
-local ssl = require("ssl")
+local ssl = require("ljtls")
 do
     local tls = ssl.tls_client()
 
