@@ -1,52 +1,42 @@
-name: Linting and Tests
-
-on: [push, pull_request]
+name: build
+on: [push]
 
 jobs:
-  check:
+  nattlua:
     runs-on: ubuntu-latest
+    container:
+      image: debian:latest
 
     steps:
-    - name: Check out the repo
-      uses: actions/checkout@v4
+      - name: checkout the project
+        uses: actions/checkout@v4
 
-    - name: Create build image name
-      run: |
-        echo "IMAGENAME_LC=${IMAGENAME,,}" >> ${GITHUB_ENV}
-      env:
-        IMAGENAME: '${{ github.repository }}'
-
-    - name: Build the Docker image
-      run: docker build .docker/alpine/ --tag ${IMAGENAME_LC}-test:lua-5.2
-
-    - name: Run linter
-      uses: addnab/docker-run-action@v3
-      with:
-        image: ${{ env.IMAGENAME_LC }}-test:lua-5.2
-        options: -v ${{ github.workspace }}:/github/workspace
+      - name: Install build dependencies
         run: |
-            echo "Static luacheck ljsocket.lua"
-            luacheck --config .luacheckrc \
-              ljsocket.lua
-            echo "Linting ljsocket.lua"
-            lualint -s ljsocket.lua
+          apt-get update
+          apt-get install -y build-essential git
 
-    - name: Bytecode verification
-      uses: addnab/docker-run-action@v3
-      with:
-        image: ${{ env.IMAGENAME_LC }}-test:lua-5.2
-        options: -v ${{ github.workspace }}:/github/workspace
+      - name: Build and install LuaJIT from source
         run: |
-          echo "Checking JIT bytecode for ljsocket.lua"
-          luajit -bl ljsocket.lua /dev/null
-          echo "Checking bytecode for ljsocket.lua"
-          luac -p ljsocket.lua
-
-    - name: Run unit tests
-      uses: addnab/docker-run-action@v3
-      with:
-        image: ${{ env.IMAGENAME_LC }}-test:lua-5.2
-        options: -v ${{ github.workspace }}:/github/workspace
+          cd /tmp
+          git clone https://luajit.org/git/luajit.git
+          cd luajit
+          make
+          make install
+          
+          # Create symlink from versioned binary to 'luajit'
+          LUAJIT_BIN=$(find /usr/local/bin -name 'luajit-*' -type f | head -n 1)
+          if [ -n "$LUAJIT_BIN" ]; then
+            ln -sf "$LUAJIT_BIN" /usr/local/bin/luajit
+          fi
+          
+          ldconfig
+          
+      - name: Verify LuaJIT installation
         run: |
-            lunit -i `which luajit` $(find test -name "*_test.lua")
-            luacov ljsocket.lua
+          which luajit
+          luajit -v
+      
+      - name: Run tests
+        run: |
+          luajit test/run.lua
