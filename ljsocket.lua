@@ -1167,17 +1167,6 @@ do -- addrinfo
 
 		return addrinfos[1]
 	end
-
-	function M.addrinfo_for_receive(ai_addr, len, family)
-		-- Create a minimal addrinfo structure with the received address
-		local ai = addrinfo_out()
-		ai.ai_addr = ai_addr
-		ai.ai_addrlen = len
-		ai.ai_family = AF.strict_lookup(family)
-		
-		-- Use the existing addressinfo constructor which properly sets up the metatable
-		return M.addressinfo(ai, nil, nil)
-	end
 end
 
 do
@@ -1415,40 +1404,40 @@ do
 
 	local sockaddr_in_boxed = ffi.typeof("$[1]", sockaddr_in)
 
-	function meta:receive_from(address, size, flags)
-		local src_addr
-		local src_addr_size
-
-		if not address then
-			src_addr = sockaddr_in_boxed()
-			src_addr_size = ffi.sizeof(sockaddr_in)
-		else
-			src_addr = address.addrinfo.ai_addr
-			src_addr_size = address.addrinfo.ai_addrlen
-		end
-
-		return self:receive(size, flags, src_addr, src_addr_size)
+	function meta:receive_from(size, flags)
+		return self:receive(size, flags, true)
 	end
 
-	function meta:receive(size, flags, src_address, address_len)
+	function meta:receive(size, flags, return_address)
 		size = size or 64000
 		local buff = ffi.new("char[?]", size)
 
 		if self.on_receive then return self:on_receive(buff, size, flags) end
 
 		local len, err, num
-		local len_res
 
-		if src_address then
-			len_res = ffi.new("int[1]", address_len)
+		local addrinfo
+
+		if return_address then
+			local src_address = sockaddr_in_boxed()
+			local ai_addrlen_res = ffi.new("int[1]", ffi.sizeof(sockaddr_in))
+
 			len, err, num = socket.recvfrom(
 				self.fd,
 				buff,
 				ffi.sizeof(buff),
 				flags or 0,
 				ffi.cast(sockaddr_ptr, src_address),
-				len_res
+				ai_addrlen_res
 			)
+
+			if len and len > 0 then
+				addrinfo = M.addressinfo(addrinfo_out({
+					ai_addr = ffi.cast(sockaddr_ptr, src_address),
+					ai_addrlen = ai_addrlen_res[0],
+					ai_family = AF.strict_lookup(self.family),
+				}))
+			end
 		else
 			len, err, num = socket.recv(self.fd, buff, ffi.sizeof(buff), flags or 0)
 		end
@@ -1480,12 +1469,7 @@ do
 		if len > 0 then
 			if self.debug then print(tostring(self), ": received ", len, " bytes") end
 
-			if src_address then
-				return ffi.string(buff, len),
-				M.addrinfo_for_receive(ffi.cast(sockaddr_ptr, src_address), len_res[0], self.family)
-			end
-
-			return ffi.string(buff, len)
+			return ffi.string(buff, len), addrinfo
 		end
 
 		return nil, err, num
