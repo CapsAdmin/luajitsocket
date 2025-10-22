@@ -2,7 +2,7 @@ name: build
 on: [push]
 
 jobs:
-  nattlua:
+  ljsocket:
     runs-on: ubuntu-latest
     container:
       image: debian:latest
