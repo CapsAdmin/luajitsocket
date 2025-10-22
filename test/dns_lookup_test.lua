@@ -1,7 +1,7 @@
 local socket = require("ljsocket")
 
 do -- lookup google
-    results = socket.get_address_info({host = "www.google.com"})
+    results = socket.find_address_info("www.google.com")
     assert(type(results) ~= nil)
     assert(#results ~= 0)
 
