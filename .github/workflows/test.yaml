@@ -63,17 +63,16 @@ jobs:
           cd /tmp
           git clone https://luajit.org/git/luajit.git
           cd luajit
-          make
+          make BUILDMODE=static
           make install PREFIX=/mingw64
 
       - name: Verify LuaJIT installation
         shell: msys2 {0}
         run: |
-          which luajit
           luajit -v
       
       - name: Run tests
         shell: msys2 {0}
         run: |
-          cd $GITHUB_WORKSPACE
+          cd "$GITHUB_WORKSPACE"
           luajit test/run.lua
