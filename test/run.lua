@@ -6,6 +6,7 @@ require("test.tcp_client_server")
 require("test.udp_client_server")
 require("test.options")
 require("test.poll")
+require("test.timeout_blocking")
 
 local old = _G.print
 _G.print = function() end

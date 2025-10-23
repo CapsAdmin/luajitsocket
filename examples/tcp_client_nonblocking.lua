@@ -37,7 +37,7 @@ while true do
                     print(str)
                     return
                 end
-            elseif err ~= "timeout" then
+            elseif err ~= "tryagain" then
                 error(err)
             end
         end

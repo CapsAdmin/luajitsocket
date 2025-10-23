@@ -338,7 +338,7 @@ local loaders = {
 					elseif bytes == 0 then
 						return ""
 					else
-						return nil, "timeout"
+						return nil, "tryagain"
 					end
 				end
 
@@ -906,14 +906,14 @@ local loaders = {
 				local err = lib_ssl.SSL_get_error(ssl_conn, ret)
 
 				-- SSL_ERROR_WANT_READ = 2, SSL_ERROR_WANT_WRITE = 3
-				if err == 2 or err == 3 then return nil, "timeout", err end
+				if err == 2 or err == 3 then return nil, "tryagain", err end
 
 				return nil, get_error_string()
 			end
 
 			if state == "connected" then return true end
 
-			return nil, "timeout"
+			return nil, "tryagain"
 		end
 
 		local function send(data_str)
@@ -925,7 +925,7 @@ local loaders = {
 
 			local err = lib_ssl.SSL_get_error(ssl_conn, ret)
 
-			if err == 2 or err == 3 then return nil, "timeout", err end
+			if err == 2 or err == 3 then return nil, "tryagain", err end
 
 			return nil, get_error_string()
 		end
@@ -941,7 +941,7 @@ local loaders = {
 
 			local err = lib_ssl.SSL_get_error(ssl_conn, ret)
 
-			if err == 2 or err == 3 then return nil, "timeout", err end
+			if err == 2 or err == 3 then return nil, "tryagain", err end
 
 			return nil, get_error_string()
 		end
@@ -1122,7 +1122,7 @@ local loaders = {
 				local status = lib.SSLHandshake(ctx)
 
 				if status == errSSLWouldBlock then
-					return nil, "timeout", status
+					return nil, "tryagain", status
 				elseif status ~= 0 then
 					return nil, string.format("SSLHandshake: %s", status_to_msg(status))
 				end
@@ -1132,7 +1132,7 @@ local loaders = {
 
 			if state == "connected" then return true end
 
-			return nil, "timeout", status
+			return nil, "tryagain", status
 		end
 
 		local function send(data_str)
@@ -1144,7 +1144,7 @@ local loaders = {
 
 			if status == 0 then return tonumber(processed[0]) end
 
-			if status == errSSLWouldBlock then return nil, "timeout", status end
+			if status == errSSLWouldBlock then return nil, "tryagain", status end
 
 			return nil, string.format("SSLWrite: %s", status_to_msg(status))
 		end
@@ -1161,7 +1161,7 @@ local loaders = {
 				return ffi.string(buffer_ptr, len)
 			end
 
-			if status == errSSLWouldBlock then return nil, "timeout", status end
+			if status == errSSLWouldBlock then return nil, "tryagain", status end
 
 			return nil, string.format("SSLRead: %s", status_to_msg(status))
 		end

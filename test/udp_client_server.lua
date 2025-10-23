@@ -25,7 +25,7 @@ test('UDP client-server communication', function()
 			ok(addr:get_port() ~= nil, "should have sender port")
 			local sent = server:send_to(addr, "hello from server")
 			ok(sent, "server should send response")
-		elseif addr ~= "timeout" then
+		elseif addr ~= "tryagain" then
 			ok(false, "server receive error: " .. tostring(addr))
 		end
 	end
@@ -61,7 +61,7 @@ test('UDP client-server communication', function()
 			if times > 5 then
 				return true
 			end
-		elseif addr ~= "timeout" then
+		elseif addr ~= "tryagain" then
 			ok(false, "client receive error: " .. tostring(addr))
 		end
 	end

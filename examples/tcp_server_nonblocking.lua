@@ -37,10 +37,10 @@ do -- server
 				client:close()
 			elseif err == "closed" then
 				client:close()
-			elseif err ~= "timeout" then
+			elseif err ~= "tryagain" then
 				error(err)
 			end
-		elseif err ~= "timeout" then
+		elseif err ~= "tryagain" then
 			error(err)
 		end
 	end

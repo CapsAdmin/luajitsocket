@@ -1284,13 +1284,14 @@ do
 			return true
 		end
 
-		if key:lower() == "rcvtimeo" then
+		if key:lower() == "rcvtimeo" or key:lower() == "sndtimeo" then
 			if ffi.os == "Windows" then
-				val = ffi.new("int[1]", val)
+				val = ffi.new("int[1]", val * 1000)
 			else
-				local usec = val * 1000
-				val = timeval()
-				val.tv_usec = usec
+				local tv = timeval()
+				tv.tv_sec = math.floor(val)
+				tv.tv_usec = (val - math.floor(val)) * 1000000
+				val = tv
 			end
 		else
 			if type(val) == "boolean" then
@@ -1369,10 +1370,6 @@ do
 		end
 	end
 
-	function meta:settimeout(t)
-		self:set_option("rcvtimeo", t)
-	end
-
 	function meta:connect(host, service)
 		local res, err = M.find_first_address_info(host, service, nil, self.family, self.socket_type, self.protocol)
 
@@ -1385,6 +1382,8 @@ do
 				self.timeout_connected = {host, service}
 				return true
 			end
+
+			if timeout_messages[num] then return nil, "timeout", num end
 
 			return ok, err, num
 		end
@@ -1401,7 +1400,7 @@ do
 			return ok, err, num
 		end
 
-		return nil, "timeout"
+		return nil, "tryagain"
 	end
 
 	function meta:bind(host, service)
@@ -1428,8 +1427,10 @@ do
 		)
 
 		if not self.blocking and timeout_messages[num] then
-			return nil, "timeout", num
+			return nil, "tryagain", num
 		end
+
+		if timeout_messages[num] then return nil, "timeout", num end
 
 		if fd ~= socket.INVALID_SOCKET then
 			local client = setmetatable(
@@ -1577,6 +1578,12 @@ do
 
 		if not len then
 			if not self.blocking and timeout_messages[num] then
+				return nil, "tryagain", num
+			end
+
+			if timeout_messages[num] then
+				if self.debug then print(tostring(self), ": timeout") end
+
 				return nil, "timeout", num
 			end
 

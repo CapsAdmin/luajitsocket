@@ -3,13 +3,10 @@ local test = require("test.gambarina")
 
 test('TCP client blocking test', function()
     local host = "www.freebsd.no"
-    local sock = socket.create("inet", "stream", "tcp")
-    ok(sock ~= nil, "socket creation should succeed")
+    local sock = assert(socket.create("inet", "stream", "tcp"))
+    assert(sock:connect(host, "http"))
 
-    local connected = sock:connect(host, "http")
-    ok(connected, "connection should succeed")
-
-    local sent = sock:send(
+    local sent = assert(sock:send(
         "GET / HTTP/1.1\r\n"..
         "Host: " .. host .. "\r\n"..
         "User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0) Gecko/20100101 Firefox/64.0\r\n"..
@@ -19,21 +16,13 @@ test('TCP client blocking test', function()
         "Connection: keep-alive\r\n"..
         "Upgrade-Insecure-Requests: 1\r\n"..
         "\r\n"
-    )
-    ok(sent, "sending HTTP request should succeed")
+    ))
 
     local total_length
     local str = ""
 
     while true do
-        local chunk = sock:receive()
-        ok(chunk ~= nil or chunk == false, "receive should not error")
-
-        if not chunk then
-            break
-        end
-
-        str = str .. chunk
+        str = str .. assert(sock:receive())
 
         if not total_length then
             total_length = tonumber(str:match("Content%-Length: (%d+)"))
@@ -52,21 +41,16 @@ end)
 
 test('TCP client non-blocking test', function()
     local host = "www.freebsd.no"
-    local sock = socket.create("inet", "stream", "tcp")
-    ok(sock ~= nil, "socket creation should succeed")
-
-    local connected = sock:connect(host, "http")
-    ok(connected, "connection should succeed")
-
-    local blocking_set = sock:set_blocking(false)
-    ok(blocking_set, "setting non-blocking mode should succeed")
+    local sock = assert(socket.create("inet", "stream", "tcp"))
+    assert(sock:connect(host, "http"))
+    assert(sock:set_blocking(false))
 
     local str = ""
     local total_length
 
     while true do
         if sock:is_connected() then
-            local sent = sock:send(
+            assert(sock:send(
                 "GET / HTTP/1.1\r\n"..
                 "Host: "..host.."\r\n"..
                 "User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0) Gecko/20100101 Firefox/64.0\r\n"..
@@ -76,11 +60,10 @@ test('TCP client non-blocking test', function()
                 "Connection: keep-alive\r\n"..
                 "Upgrade-Insecure-Requests: 1\r\n"..
                 "\r\n"
-            )
-            ok(sent, "sending HTTP request should succeed")
+            ))
 
             while true do
-                local chunk, err, num = sock:receive()
+                local chunk, err = sock:receive()
 
                 if chunk then
                     str = str .. chunk
@@ -95,8 +78,8 @@ test('TCP client non-blocking test', function()
                         ok(string.find(str, "</html>", nil, true) ~= nil, "response should contain closing html tag")
                         return
                     end
-                elseif err ~= "timeout" then
-                    ok(false, "receive error: " .. tostring(err))
+                elseif err ~= "tryagain" then
+                    error("receive error: " .. tostring(err))
                     return
                 end
             end

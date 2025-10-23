@@ -23,7 +23,7 @@ test('TCP client-server communication', function()
 		if client then
 			current_client = client
 			assert(client:set_blocking(false))
-		elseif err ~= "timeout" then
+		elseif err ~= "tryagain" then
 			error("server accept error: " .. tostring(err))
 		end
 
@@ -36,7 +36,7 @@ test('TCP client-server communication', function()
 				assert(current_client:close())
 				current_client = nil
 				return true
-			elseif err ~= "timeout" then
+			elseif err ~= "tryagain" then
 				error("server receive error: " .. tostring(err))
 			end
 		end
@@ -60,7 +60,7 @@ test('TCP client-server communication', function()
 				if str then
 					ok(str == "hello", "client should receive echo 'hello'")
 					assert(client:close())
-				elseif err ~= "timeout" then
+				elseif err ~= "tryagain" then
 					error("client receive error: " .. tostring(err))
 				end
 			end
