@@ -1286,11 +1286,11 @@ do
 
 		if key:lower() == "rcvtimeo" or key:lower() == "sndtimeo" then
 			if ffi.os == "Windows" then
-				val = ffi.new("int[1]", val * 1000)
+				val = ffi.new("int[1]", val)
 			else
 				local tv = timeval()
-				tv.tv_sec = math.floor(val)
-				tv.tv_usec = (val - math.floor(val)) * 1000000
+				tv.tv_sec = math.floor(val / 1000)
+				tv.tv_usec = (val % 1000) * 1000
 				val = tv
 			end
 		else

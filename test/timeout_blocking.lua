@@ -5,7 +5,7 @@ test('TCP client rcvtimeo timeout blocking test', function()
     local sock = assert(socket.create("inet", "stream", "tcp"))
     assert(sock:connect("httpbin.org", "http"))
     assert(sock:send("GET /delay/10 HTTP/1.1\r\nHost: httpbin.org\r\n\r\n"))
-    assert(sock:set_option("rcvtimeo", 0.25))
+    assert(sock:set_option("rcvtimeo", 250))
     local res, err = sock:receive()
     if res then
         error("expected timeout error, got data")
@@ -30,7 +30,7 @@ test('TCP client sndtimeo blocking test', function()
     local accepted = assert(server:accept())
 
     -- Set a short send timeout
-    assert(client:set_option("sndtimeo", 0.25))
+    assert(client:set_option("sndtimeo", 250))
 
     -- Try to send enough data to fill the send buffer
     -- This should eventually timeout when the buffer is full
