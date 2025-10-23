@@ -849,6 +849,7 @@ do
 		e.SO_SNDTIMEO = 4101
 		e.POLLIN = 768
 		e.POLLPRI = 1024
+		e.POLLOUT = 16
 		e.SO_TYPE = 4104
 		e.POLLRDBAND = 512
 		e.POLLWRBAND = 32
@@ -1245,6 +1246,12 @@ do
 	function meta:set_option(key, val, level)
 		level = level or "socket"
 
+		-- Windows doesn't support SO_BROADCAST on SOCK_STREAM sockets
+		if ffi.os == "Windows" and key:lower() == "broadcast" and self.socket_type == "stream" then
+			-- Silently succeed for compatibility
+			return true
+		end
+
 		if key:lower() == "rcvtimeo" then
 			if ffi.os == "Windows" then
 				val = ffi.new("int[1]", val)
@@ -1278,6 +1285,12 @@ do
 
 	function meta:get_option(key, level)
 		level = level or "socket"
+
+		-- Windows doesn't support SO_BROADCAST on SOCK_STREAM sockets
+		if ffi.os == "Windows" and key:lower() == "broadcast" and self.socket_type == "stream" then
+			-- Return 0 (disabled) for compatibility
+			return 0
+		end
 
 		local env = SO
 

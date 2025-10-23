@@ -164,7 +164,7 @@ local loaders = {
 			"Microsoft Unified Security Protocol Provider",
 			SECPKG_CRED_OUTBOUND,
 			nil,
-			nil,
+			ffi.cast("void*", nil),
 			nil,
 			nil,
 			hCreds,
