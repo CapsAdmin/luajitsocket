@@ -625,8 +625,6 @@ do
 	)
 	sockaddr_ptr = ffi.typeof("$*", sockaddr)
 
-	function socket.poll(fd, events, revents) end
-
 	e = {
 		TCP_NODELAY = 1,
 		TCP_MAXSEG = 2,
@@ -888,6 +886,21 @@ do
 		e.SO_RCVTIMEO = 0x1006
 		e.SO_ERROR = 0x1007
 		e.SO_TYPE = 0x1008
+		e.POLLIN = 0x0001     
+		e.POLLPRI = 0x0002    
+		e.POLLOUT = 0x0004    
+		e.POLLRDNORM = 0x0040 
+		e.POLLWRNORM = 0x0004 
+		e.POLLRDBAND = 0x0080 
+		e.POLLWRBAND = 0x0100 
+		e.POLLERR = 0x0008    
+		e.POLLHUP = 0x0010    
+		e.POLLNVAL = 0x0020   
+
+		e.POLLEXTEND = 0x0200  
+		e.POLLATTRIB = 0x0400  
+		e.POLLNLINK = 0x0800   
+		e.POLLWRITE = 0x1000   
 		errno.EINVAL = 22
 		errno.EAGAIN = 35
 		errno.EWOULDBLOCK = errno.EAGAIN
@@ -987,12 +1000,12 @@ function M.poll(sock, flags, timeout)
 		{
 			{
 				fd = sock.fd,
-				events = POLL.table_to_flags(flags, bit.bor),
+				events = flags and POLL.table_to_flags(flags, bit.bor) or 0,
 				revents = 0,
 			},
 		}
 	)
-	local ok, err = sock.poll(pfd, 1, timeout or 0)
+	local ok, err = socket.poll(pfd, 1, timeout or 0)
 
 	if not ok then return ok, err end
 
