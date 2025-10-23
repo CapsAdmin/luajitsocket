@@ -2,7 +2,7 @@ name: build
 on: [push]
 
 jobs:
-  ljsocket:
+  ljsocket-linux:
     runs-on: ubuntu-latest
     container:
       image: debian:latest
@@ -24,7 +24,6 @@ jobs:
           make
           make install
           
-          # Create symlink from versioned binary to 'luajit'
           LUAJIT_BIN=$(find /usr/local/bin -name 'luajit-*' -type f | head -n 1)
           if [ -n "$LUAJIT_BIN" ]; then
             ln -sf "$LUAJIT_BIN" /usr/local/bin/luajit
@@ -38,5 +37,42 @@ jobs:
           luajit -v
       
       - name: Run tests
+        run: |
+          luajit test/run.lua
+
+  ljsocket-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: checkout the project
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            make
+            mingw-w64-x86_64-gcc
+
+      - name: Build and install LuaJIT from source
+        shell: msys2 {0}
+        run: |
+          cd /tmp
+          git clone https://luajit.org/git/luajit.git
+          cd luajit
+          make
+          make install
+
+      - name: Verify LuaJIT installation
+        shell: msys2 {0}
+        run: |
+          which luajit
+          luajit -v
+      
+      - name: Run tests
+        shell: msys2 {0}
         run: |
           luajit test/run.lua
