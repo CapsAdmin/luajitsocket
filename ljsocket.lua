@@ -996,12 +996,28 @@ timeout_messages[errno.ETIMEDOUT] = true
 local pollfd_box = ffi.typeof("$[1]", pollfd)
 
 function M.poll(sock, flags, timeout)
+	local events = 0
+	if flags then
+		-- On Windows, POLLERR and POLLHUP are output-only flags and cannot be requested
+		if ffi.os == "Windows" then
+			local filtered_flags = {}
+			for i, flag in ipairs(flags) do
+				if flag ~= "err" and flag ~= "hup" then
+					table.insert(filtered_flags, flag)
+				end
+			end
+			events = #filtered_flags > 0 and POLL.table_to_flags(filtered_flags, bit.bor) or 0
+		else
+			events = POLL.table_to_flags(flags, bit.bor)
+		end
+	end
+
 	local pfd = ffi.new(
 		pollfd_box,
 		{
 			{
 				fd = sock.fd,
-				events = flags and POLL.table_to_flags(flags, bit.bor) or 0,
+				events = events,
 				revents = 0,
 			},
 		}
@@ -1248,7 +1264,14 @@ do
 
 		-- Windows doesn't support SO_BROADCAST on SOCK_STREAM sockets
 		if ffi.os == "Windows" and key:lower() == "broadcast" and self.socket_type == "stream" then
-			-- Silently succeed for compatibility
+			-- Store the value for later retrieval and silently succeed
+			if type(val) == "boolean" then
+				self._broadcast_fake = val and 1 or 0
+			elseif type(val) == "number" then
+				self._broadcast_fake = val
+			elseif type(val) == "cdata" then
+				self._broadcast_fake = val[0]
+			end
 			return true
 		end
 
@@ -1288,8 +1311,8 @@ do
 
 		-- Windows doesn't support SO_BROADCAST on SOCK_STREAM sockets
 		if ffi.os == "Windows" and key:lower() == "broadcast" and self.socket_type == "stream" then
-			-- Return 0 (disabled) for compatibility
-			return 0
+			-- Return the value from our fake storage if it was set, otherwise 0
+			return self._broadcast_fake or 0
 		end
 
 		local env = SO

@@ -35,7 +35,7 @@ local loaders = {
 		local SECURITY_INTEGER = ffi.typeof("struct { uint32_t LowPart; int32_t HighPart; }")
 		local SecHandle = ffi.typeof("struct { uintptr_t dwLower; uintptr_t dwUpper; }")
 		local SecBuffer = ffi.typeof("struct { uint32_t cbBuffer; uint32_t BufferType; void* pvBuffer; }")
-		local SecBufferDesc = ffi.typeof("struct { uint32_t ulVersion; uint32_t cBuffers; $ *pBuffers; }", SecBuffer)
+		local SecBufferDesc = ffi.typeof("struct { uint32_t ulVersion; uint32_t cBuffers; $* pBuffers; }", SecBuffer)
 		local SecBuffer1 = ffi.typeof("$[1]", SecBuffer)
 		local SecBuffer2 = ffi.typeof("$[2]", SecBuffer)
 		local SecBuffer4 = ffi.typeof("$[4]", SecBuffer)
@@ -46,28 +46,33 @@ local loaders = {
 			uint32_t cBuffers;
 			uint32_t cbBlockSize;
 		}]])
+
+		local SecHandle_ptr = ffi.typeof("$*", SecHandle)
+		local SECURITY_INTEGER_ptr = ffi.typeof("$*", SECURITY_INTEGER)
+		local SecBufferDesc_ptr = ffi.typeof("$*", SecBufferDesc)
+
 		ffi.cdef("int recv(uintptr_t, void*, int, int)")
 		ffi.cdef("int send(uintptr_t, const void*, int, int)")
 		ffi.cdef(
-			"uint32_t AcquireCredentialsHandleA(const char*, const char*, uint32_t, void*, void*, void*, void*, $*, $*)",
-			SecHandle,
-			SECURITY_INTEGER
+			"uint32_t AcquireCredentialsHandleA(const char*, const char*, uint32_t, void*, void*, void*, void*, $, $)",
+			SecHandle_ptr,
+			SECURITY_INTEGER_ptr
 		)
 		ffi.cdef(
-			"uint32_t InitializeSecurityContextA($*, $*, const char*, uint32_t, uint32_t, uint32_t, $*, uint32_t, $*, $*, uint32_t*, $*)",
-			SecHandle,
-			SecHandle,
-			SecBufferDesc,
-			SecHandle,
-			SecBufferDesc,
-			SECURITY_INTEGER
+			"uint32_t InitializeSecurityContextA($, $, const char*, uint32_t, uint32_t, uint32_t, $, uint32_t, $, $, uint32_t*, $)",
+			SecHandle_ptr,
+			SecHandle_ptr,
+			SecBufferDesc_ptr,
+			SecHandle_ptr,
+			SecBufferDesc_ptr,
+			SECURITY_INTEGER_ptr
 		)
-		ffi.cdef("uint32_t EncryptMessage($*, uint32_t, $*, uint32_t)", SecHandle, SecBufferDesc)
-		ffi.cdef("uint32_t DecryptMessage($*, $*, uint32_t, uint32_t*)", SecHandle, SecBufferDesc)
-		ffi.cdef("uint32_t DeleteSecurityContext($*)", SecHandle)
-		ffi.cdef("uint32_t FreeCredentialsHandle($*)", SecHandle)
+		ffi.cdef("uint32_t EncryptMessage($, uint32_t, $, uint32_t)", SecHandle_ptr, SecBufferDesc_ptr)
+		ffi.cdef("uint32_t DecryptMessage($, $, uint32_t, uint32_t*)", SecHandle_ptr, SecBufferDesc_ptr)
+		ffi.cdef("uint32_t DeleteSecurityContext($)", SecHandle_ptr)
+		ffi.cdef("uint32_t FreeCredentialsHandle($)", SecHandle_ptr)
 		ffi.cdef("uint32_t FreeContextBuffer(void*)")
-		ffi.cdef("uint32_t QueryContextAttributesA($*, uint32_t, void*)", SecHandle)
+		ffi.cdef("uint32_t QueryContextAttributesA($, uint32_t, void*)", SecHandle_ptr)
 		ffi.cdef([[
 		uint32_t FormatMessageA(
 			uint32_t dwFlags,
@@ -150,9 +155,11 @@ local loaders = {
 			return status_name
 		end
 
-		local hCreds = ffi.new(SecHandle)
-		local hContext = ffi.new(SecHandle)
-		local tsExpiry = ffi.new(SECURITY_INTEGER)
+		local SecHandle1 = ffi.typeof("$[1]", SecHandle)
+		local SECURITY_INTEGER1 = ffi.typeof("$[1]", SECURITY_INTEGER)
+		local hCreds = ffi.new(SecHandle1)
+		local hContext = ffi.new(SecHandle1)
+		local tsExpiry = ffi.new(SECURITY_INTEGER1)
 		local state = "init"
 		local recv_buffer = ffi.new("uint8_t[?]", 65536)
 		local recv_len = 0
