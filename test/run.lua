@@ -1,11 +1,19 @@
+local test = require("test.gambarina")
+
 require("test.dns_lookup_test")
 require("test.tcp_client_test")
 require("test.tcp_client_server")
 require("test.udp_client_server")
 require("test.options")
+require("test.poll")
 
+local old = _G.print
+_G.print = function() end
 require("examples.dns_lookup")
 require("examples.tcp_client_blocking")
 require("examples.tcp_client_nonblocking")
 require("examples.tcp_client_blocking_tls")
 require("examples.tcp_client_nonblocking_tls")
+_G.print = old
+
+test:report()

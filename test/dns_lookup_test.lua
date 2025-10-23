@@ -1,13 +1,14 @@
 local socket = require("ljsocket")
+local test = require("test.gambarina")
 
-do -- lookup google
-    results = socket.find_address_info("www.google.com")
-    assert(type(results) ~= nil)
-    assert(#results ~= 0)
+test('DNS lookup for www.google.com', function()
+    local results = socket.find_address_info("www.google.com")
+    ok(type(results) ~= nil, "results should not be nil")
+    ok(#results ~= 0, "results should not be empty")
 
     for i, info in ipairs(results) do
-        assert(info.host == "www.google.com")
-        assert(info.family)
-        assert(info.protocol)
+        ok(info.host == "www.google.com", "host should be www.google.com")
+        ok(info.family ~= nil, "family should be set")
+        ok(info.protocol ~= nil, "protocol should be set")
     end
-end
+end)
