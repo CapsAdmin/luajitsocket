@@ -24,7 +24,7 @@ test('TCP client-server communication', function()
 			current_client = client
 			assert(client:set_blocking(false))
 		elseif err ~= "timeout" then
-			ok(false, "server accept error: " .. tostring(err))
+			error("server accept error: " .. tostring(err))
 		end
 
 		if current_client then
