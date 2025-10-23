@@ -549,7 +549,7 @@ do
 	socket.accept = load_socket_function(
 		"accept",
 		function(ret)
-			if ret == -1 then return nil, socket.lasterror() end
+			if ret == socket.INVALID_SOCKET then return nil, socket.lasterror() end
 
 			return ret
 		end,
