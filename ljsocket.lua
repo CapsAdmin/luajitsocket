@@ -1523,6 +1523,14 @@ do
 			len, err, num = socket.send(self.fd, data, #data, flags)
 		end
 
+		if timeout_messages[num] then
+			if not self.blocking then
+				return nil, "tryagain", num
+			end
+
+			return nil, "timeout", num
+		end
+
 		if not len then return len, err, num end
 
 		if len > 0 then return len end
