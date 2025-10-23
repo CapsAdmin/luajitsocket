@@ -42,6 +42,6 @@ while true do
             end
         end
     else
-        socket:poll_connect()
+        socket:try_connect()
     end
 end

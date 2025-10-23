@@ -995,7 +995,9 @@ timeout_messages[errno.EWOULDBLOCK] = true
 timeout_messages[errno.ETIMEDOUT] = true
 local pollfd_box = ffi.typeof("$[1]", pollfd)
 
-function M.poll(sock, flags, timeout)
+function M.poll(socks, flags, timeout)
+	-- Transform single socket to array
+	
 	local events = 0
 	if flags then
 		-- On Windows, POLLERR and POLLHUP are output-only flags and cannot be requested
@@ -1012,21 +1014,28 @@ function M.poll(sock, flags, timeout)
 		end
 	end
 
-	local pfd = ffi.new(
-		pollfd_box,
-		{
-			{
-				fd = sock.fd,
-				events = events,
-				revents = 0,
-			},
+	-- Create pollfd array for all sockets
+	local pfds = {}
+	for i, sock in ipairs(socks) do
+		pfds[i] = {
+			fd = sock.fd,
+			events = events,
+			revents = 0,
 		}
-	)
-	local ok, err = socket.poll(pfd, 1, timeout or 0)
+	end
+	
+	local pfd = ffi.new(pollfd_box, pfds)
+	local ok, err = socket.poll(pfd, #socks, timeout or 0)
 
 	if not ok then return ok, err end
 
-	return POLL.flags_to_table(pfd[0].revents, bit.bor), ok
+	-- Return array of results for each socket
+	local results = {}
+	for i = 0, #socks - 1 do
+		results[i + 1] = POLL.flags_to_table(pfd[i].revents, bit.bor)
+	end
+	
+	return results, ok
 end
 
 function M.bind(host, service)
@@ -1385,7 +1394,7 @@ do
 		return true
 	end
 
-	function meta:poll_connect()
+	function meta:try_connect()
 		if self.on_connect and self.timeout_connected and self:is_connected() then
 			local ok, err, num = self:on_connect(unpack(self.timeout_connected))
 			self.timeout_connected = nil
@@ -1446,6 +1455,15 @@ do
 		end
 
 		return nil, err, num
+	end
+
+	function meta:poll(timeout, ...)
+		local results, count = M.poll({self}, {...}, timeout)
+
+		if not results then return results, count end
+		if count == 0 then return true end
+
+		return results[1]
 	end
 
 	function meta:is_connected()

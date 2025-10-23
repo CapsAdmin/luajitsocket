@@ -37,11 +37,10 @@ test('poll() returns immediately with timeout=0', function()
     sock:set_blocking(false)
 
     local start = get_time_ms()
-    local events, count = assert(socket.poll(sock, {"in"}, 0))
+    local events = assert(sock:poll(0, "in"))
     local elapsed = get_time_ms() - start
 
     ok(elapsed < 50, "poll(timeout=0) should return quickly")
-    ok(count ~= nil, "poll should return count")
 
     sock:close()
 end)
@@ -52,12 +51,11 @@ test('poll() respects timeout duration', function()
 
     local timeout = 100
     local start = get_time_ms()
-    local events, count = assert(socket.poll(sock, {"in"}, timeout))
+    local events = assert(sock:poll(timeout, "in"))
     local elapsed = get_time_ms() - start
 
     ok(elapsed >= timeout - 10, "poll should wait for timeout")
     ok(elapsed < timeout + 100, "poll should not wait too long")
-    ok(count == 0, "should have no events")
 
     sock:close()
 end)
@@ -76,9 +74,8 @@ test('POLLIN flag set when data available (UDP)', function()
     assert(client:send_to(send_addr, "test data"))
     sleep(50)
 
-    local events, count = assert(socket.poll(server, {"in"}, 100))
+    local events = assert(server:poll(100, "in"))
     ok(events["in"] == true, "POLLIN should be set when data available")
-    ok(count == 1, "should have 1 event")
 
     local data, addr = assert(server:receive_from())
     ok(data == "test data", "should receive correct data")
@@ -91,7 +88,7 @@ test('POLLOUT flag set when socket writable', function()
     local sock = assert(socket.create("inet", "dgram", "udp"))
     assert(sock:set_blocking(false))
 
-    local events, count = assert(socket.poll(sock, {"out"}, 100))
+    local events = assert(sock:poll(100, "out"))
     ok(events["out"] == true, "POLLOUT should be set on writable socket")
 
     sock:close()
@@ -101,9 +98,8 @@ test('Multiple poll flags work correctly', function()
     local sock = assert(socket.create("inet", "dgram", "udp"))
     assert(sock:set_blocking(false))
 
-    local events, count = assert(socket.poll(sock, {"in", "out"}, 100))
+    local events = assert(sock:poll(100, "in", "out"))
     ok(events["out"] == true, "POLLOUT should be set")
-    ok(count >= 1, "should have at least 1 event")
 
     sock:close()
 end)
@@ -115,7 +111,7 @@ test('POLLERR detection', function()
     local connect_addr = assert(socket.find_first_address_info("127.0.0.1", 1))
     sock:connect(connect_addr)
 
-    local events, count = assert(socket.poll(sock, {"out", "err"}, 1000))
+    local events = assert(sock:poll(1000, "out", "err"))
     ok(events["out"] or events["err"], "should have POLLOUT or POLLERR")
 
     sock:close()
@@ -136,7 +132,7 @@ test('TCP non-blocking connect detection with POLLOUT', function()
     local connect_addr = assert(socket.find_first_address_info("127.0.0.1", port))
     client:connect(connect_addr)
 
-    local events, count = assert(socket.poll(client, {"out"}, 2000))
+    local events = assert(client:poll(2000, "out"))
     ok(events["out"] == true, "POLLOUT should be set after connect")
 
     local errno = client:get_option("error", "socket")
@@ -168,7 +164,7 @@ test('POLLHUP detection on peer disconnect', function()
     client:close()
     sleep(100)
 
-    local events, count = assert(socket.poll(conn, {"in", "hup"}, 500))
+    local events = assert(conn:poll(500, "in", "hup"))
     ok(events["in"] or events["hup"], "should have POLLIN or POLLHUP after close")
 
     conn:close()
@@ -179,8 +175,8 @@ test('poll() with empty flags returns zero events', function()
     local sock = assert(socket.create("inet", "dgram", "udp"))
     assert(sock:set_blocking(false))
 
-    local events, count = assert(socket.poll(sock, {}, 100))
-    ok(count == 0, "should have no events with empty flags")
+    local events = assert(sock:poll(100))
+    ok(events == true, "should have no events with empty flags")
 
     sock:close()
 end)
@@ -191,7 +187,7 @@ test('Rapid polling with timeout=0 does not block', function()
 
     local start = get_time_ms()
     for i = 1, 100 do
-        assert(socket.poll(sock, {"in"}, 0))
+        assert(sock:poll(0, "in"))
     end
     local elapsed = get_time_ms() - start
 
@@ -204,7 +200,7 @@ test('poll() on closed socket returns error', function()
     local sock = assert(socket.create("inet", "dgram", "udp"))
     sock:close()
 
-    local events, err = socket.poll(sock, {"in"}, 100)
+    local events, err = sock:poll(100, "in")
     ok(events == nil or (events and events["nval"]), "poll on closed socket should error or return POLLNVAL")
 end)
 
@@ -221,25 +217,25 @@ test('Full UDP send/receive cycle with poll()', function()
     assert(client:set_blocking(false))
     local send_addr = assert(socket.find_first_address_info("127.0.0.1", port))
 
-    local events = assert(socket.poll(client, {"out"}, 100))
+    local events = assert(client:poll(100, "out"))
     ok(events["out"], "client should be writable")
     client:send_to(send_addr, "ping")
 
     sleep(50)
 
-    events = assert(socket.poll(server, {"in"}, 500))
+    events = assert(server:poll(500, "in"))
     ok(events["in"], "server should have data")
 
     local data, addr = assert(server:receive_from())
     ok(data == "ping", "server should receive ping")
 
-    events = assert(socket.poll(server, {"out"}, 100))
+    events = assert(server:poll(100, "out"))
     ok(events["out"], "server should be writable")
     server:send_to(addr, "pong")
 
     sleep(50)
 
-    events = assert(socket.poll(client, {"in"}, 500))
+    events = assert(client:poll(500, "in"))
     ok(events["in"], "client should have data")
 
     data, addr = assert(client:receive_from())
@@ -265,7 +261,7 @@ test('POLLIN on listening socket indicates accept readiness', function()
 
     sleep(50)
 
-    local events = assert(socket.poll(server, {"in"}, 500))
+    local events = assert(server:poll(500, "in"))
     ok(events["in"], "POLLIN should be set when connection pending")
 
     local conn = server:accept()
@@ -293,7 +289,7 @@ test('poll() with -1 timeout waits indefinitely', function()
     sleep(50)
 
     local start = get_time_ms()
-    local events = assert(socket.poll(sock, {"in"}, -1))
+    local events = assert(sock:poll(-1, "in"))
     local elapsed = get_time_ms() - start
 
     ok(events["in"], "poll(-1) should detect data")
@@ -320,7 +316,7 @@ test('Large UDP datagram handling with poll()', function()
     assert(client:send_to(send_addr, large_data))
     sleep(50)
 
-    local events = assert(socket.poll(server, {"in"}, 500))
+    local events = assert(server:poll(500, "in"))
     ok(events["in"], "server should receive large datagram")
 
     local data = assert(server:receive_from())

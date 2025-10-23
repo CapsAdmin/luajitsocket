@@ -23,6 +23,7 @@ do -- server
 	local content = header .. body
 
 	while true do
+		--assert(server:poll({"in"}, 1000))
 		local client, err = server:accept()
 
 		if client then

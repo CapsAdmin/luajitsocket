@@ -101,7 +101,7 @@ test('TCP client non-blocking test', function()
                 end
             end
         else
-            sock:poll_connect()
+            sock:try_connect()
         end
     end
 end)
