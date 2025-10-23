@@ -32,12 +32,12 @@ local function sleep(ms)
 end
 
 test('poll() returns immediately with timeout=0', function()
-    local sock = socket.create("inet", "dgram", "udp")
+    local sock = assert(socket.create("inet", "dgram", "udp"))
     ok(sock ~= nil, "should create socket")
     sock:set_blocking(false)
 
     local start = get_time_ms()
-    local events, count = socket.poll(sock, {"in"}, 0)
+    local events, count = assert(socket.poll(sock, {"in"}, 0))
     local elapsed = get_time_ms() - start
 
     ok(elapsed < 50, "poll(timeout=0) should return quickly")
@@ -47,13 +47,12 @@ test('poll() returns immediately with timeout=0', function()
 end)
 
 test('poll() respects timeout duration', function()
-    local sock = socket.create("inet", "dgram", "udp")
-    ok(sock ~= nil, "should create socket")
+    local sock = assert(socket.create("inet", "dgram", "udp"))
     sock:set_blocking(false)
 
     local timeout = 100
     local start = get_time_ms()
-    local events, count = socket.poll(sock, {"in"}, timeout)
+    local events, count = assert(socket.poll(sock, {"in"}, timeout))
     local elapsed = get_time_ms() - start
 
     ok(elapsed >= timeout - 10, "poll should wait for timeout")
@@ -64,30 +63,24 @@ test('poll() respects timeout duration', function()
 end)
 
 test('POLLIN flag set when data available (UDP)', function()
-    local server = socket.create("inet", "dgram", "udp")
-    ok(server ~= nil, "should create server socket")
-    local bind_addr = socket.find_first_address_info("127.0.0.1", 0)
-    ok(bind_addr ~= nil, "should find bind address")
-    server:bind(bind_addr)
-    server:set_blocking(false)
+    local server = assert(socket.create("inet", "dgram", "udp"))
+    local bind_addr = assert(socket.find_first_address_info("127.0.0.1", 0))
+    assert(server:bind(bind_addr))
+    assert(server:set_blocking(false))
 
     local ip, port = server:get_name()
     ok(port ~= nil, "should get server port")
 
-    local client = socket.create("inet", "dgram", "udp")
-    ok(client ~= nil, "should create client socket")
-    local send_addr = socket.find_first_address_info("127.0.0.1", port)
-    ok(send_addr ~= nil, "should find send address")
-
-    client:send_to(send_addr, "test data")
+    local client = assert(socket.create("inet", "dgram", "udp"))
+    local send_addr = assert(socket.find_first_address_info("127.0.0.1", port))
+    assert(client:send_to(send_addr, "test data"))
     sleep(50)
 
-    local events, count = socket.poll(server, {"in"}, 100)
-    ok(events ~= nil, "poll should return events")
+    local events, count = assert(socket.poll(server, {"in"}, 100))
     ok(events["in"] == true, "POLLIN should be set when data available")
     ok(count == 1, "should have 1 event")
 
-    local data, addr = server:receive_from()
+    local data, addr = assert(server:receive_from())
     ok(data == "test data", "should receive correct data")
 
     server:close()
@@ -95,24 +88,20 @@ test('POLLIN flag set when data available (UDP)', function()
 end)
 
 test('POLLOUT flag set when socket writable', function()
-    local sock = socket.create("inet", "dgram", "udp")
-    ok(sock ~= nil, "should create socket")
-    sock:set_blocking(false)
+    local sock = assert(socket.create("inet", "dgram", "udp"))
+    assert(sock:set_blocking(false))
 
-    local events, count = socket.poll(sock, {"out"}, 100)
-    ok(events ~= nil, "poll should return events")
+    local events, count = assert(socket.poll(sock, {"out"}, 100))
     ok(events["out"] == true, "POLLOUT should be set on writable socket")
 
     sock:close()
 end)
 
 test('Multiple poll flags work correctly', function()
-    local sock = socket.create("inet", "dgram", "udp")
-    ok(sock ~= nil, "should create socket")
-    sock:set_blocking(false)
+    local sock = assert(socket.create("inet", "dgram", "udp"))
+    assert(sock:set_blocking(false))
 
-    local events, count = socket.poll(sock, {"in", "out"}, 100)
-    ok(events ~= nil, "poll should return events")
+    local events, count = assert(socket.poll(sock, {"in", "out"}, 100))
     ok(events["out"] == true, "POLLOUT should be set")
     ok(count >= 1, "should have at least 1 event")
 
@@ -120,42 +109,34 @@ test('Multiple poll flags work correctly', function()
 end)
 
 test('POLLERR detection', function()
-    local sock = socket.create("inet", "stream", "tcp")
-    ok(sock ~= nil, "should create socket")
-    sock:set_blocking(false)
+    local sock = assert(socket.create("inet", "stream", "tcp"))
+    assert(sock:set_blocking(false))
 
-    local connect_addr = socket.find_first_address_info("127.0.0.1", 1)
-    ok(connect_addr ~= nil, "should find connect address")
+    local connect_addr = assert(socket.find_first_address_info("127.0.0.1", 1))
     sock:connect(connect_addr)
 
-    local events, count = socket.poll(sock, {"out", "err"}, 1000)
-    ok(events ~= nil, "poll should return events")
+    local events, count = assert(socket.poll(sock, {"out", "err"}, 1000))
     ok(events["out"] or events["err"], "should have POLLOUT or POLLERR")
 
     sock:close()
 end)
 
 test('TCP non-blocking connect detection with POLLOUT', function()
-    local server = socket.create("inet", "stream", "tcp")
-    ok(server ~= nil, "should create server socket")
-    local bind_addr = socket.find_first_address_info("127.0.0.1", 0)
-    ok(bind_addr ~= nil, "should find bind address")
-    server:bind(bind_addr)
-    server:listen(1)
+    local server = assert(socket.create("inet", "stream", "tcp"))
+    local bind_addr = assert(socket.find_first_address_info("127.0.0.1", 0))
+    assert(server:bind(bind_addr))
+    assert(server:listen(1))
 
     local ip, port = server:get_name()
     ok(port ~= nil, "should get server port")
 
-    local client = socket.create("inet", "stream", "tcp")
-    ok(client ~= nil, "should create client socket")
-    client:set_blocking(false)
+    local client = assert(socket.create("inet", "stream", "tcp"))
+    assert(client:set_blocking(false))
 
-    local connect_addr = socket.find_first_address_info("127.0.0.1", port)
-    ok(connect_addr ~= nil, "should find connect address")
+    local connect_addr = assert(socket.find_first_address_info("127.0.0.1", port))
     client:connect(connect_addr)
 
-    local events, count = socket.poll(client, {"out"}, 2000)
-    ok(events ~= nil, "poll should return events")
+    local events, count = assert(socket.poll(client, {"out"}, 2000))
     ok(events["out"] == true, "POLLOUT should be set after connect")
 
     local errno = client:get_option("error", "socket")
@@ -166,33 +147,28 @@ test('TCP non-blocking connect detection with POLLOUT', function()
 end)
 
 test('POLLHUP detection on peer disconnect', function()
-    local server = socket.create("inet", "stream", "tcp")
-    ok(server ~= nil, "should create server socket")
-    local bind_addr = socket.find_first_address_info("127.0.0.1", 0)
-    ok(bind_addr ~= nil, "should find bind address")
-    server:bind(bind_addr)
-    server:listen(1)
-    server:set_blocking(false)
+    local server = assert(socket.create("inet", "stream", "tcp"))
+    local bind_addr = assert(socket.find_first_address_info("127.0.0.1", 0))
+    assert(server:bind(bind_addr))
+    assert(server:listen(1))
+    assert(server:set_blocking(false))
 
     local ip, port = server:get_name()
     ok(port ~= nil, "should get server port")
 
-    local client = socket.create("inet", "stream", "tcp")
-    ok(client ~= nil, "should create client socket")
-    local connect_addr = socket.find_first_address_info("127.0.0.1", port)
-    ok(connect_addr ~= nil, "should find connect address")
-    client:connect(connect_addr)
+    local client = assert(socket.create("inet", "stream", "tcp"))
+    local connect_addr = assert(socket.find_first_address_info("127.0.0.1", port))
+    assert(client:connect(connect_addr))
 
     sleep(50)
     local conn, err = server:accept()
     ok(conn ~= nil, "should accept connection")
-    conn:set_blocking(false)
+    assert(conn:set_blocking(false))
 
     client:close()
     sleep(100)
 
-    local events, count = socket.poll(conn, {"in", "hup"}, 500)
-    ok(events ~= nil, "poll should return events")
+    local events, count = assert(socket.poll(conn, {"in", "hup"}, 500))
     ok(events["in"] or events["hup"], "should have POLLIN or POLLHUP after close")
 
     conn:close()
@@ -200,24 +176,22 @@ test('POLLHUP detection on peer disconnect', function()
 end)
 
 test('poll() with empty flags returns zero events', function()
-    local sock = socket.create("inet", "dgram", "udp")
-    ok(sock ~= nil, "should create socket")
-    sock:set_blocking(false)
+    local sock = assert(socket.create("inet", "dgram", "udp"))
+    assert(sock:set_blocking(false))
 
-    local events, count = socket.poll(sock, {}, 100)
+    local events, count = assert(socket.poll(sock, {}, 100))
     ok(count == 0, "should have no events with empty flags")
 
     sock:close()
 end)
 
 test('Rapid polling with timeout=0 does not block', function()
-    local sock = socket.create("inet", "dgram", "udp")
-    ok(sock ~= nil, "should create socket")
-    sock:set_blocking(false)
+    local sock = assert(socket.create("inet", "dgram", "udp"))
+    assert(sock:set_blocking(false))
 
     local start = get_time_ms()
     for i = 1, 100 do
-        socket.poll(sock, {"in"}, 0)
+        assert(socket.poll(sock, {"in"}, 0))
     end
     local elapsed = get_time_ms() - start
 
@@ -227,8 +201,7 @@ test('Rapid polling with timeout=0 does not block', function()
 end)
 
 test('poll() on closed socket returns error', function()
-    local sock = socket.create("inet", "dgram", "udp")
-    ok(sock ~= nil, "should create socket")
+    local sock = assert(socket.create("inet", "dgram", "udp"))
     sock:close()
 
     local events, err = socket.poll(sock, {"in"}, 100)
@@ -236,44 +209,40 @@ test('poll() on closed socket returns error', function()
 end)
 
 test('Full UDP send/receive cycle with poll()', function()
-    local server = socket.create("inet", "dgram", "udp")
-    ok(server ~= nil, "should create server socket")
-    local bind_addr = socket.find_first_address_info("127.0.0.1", 0)
-    ok(bind_addr ~= nil, "should find bind address")
-    server:bind(bind_addr)
-    server:set_blocking(false)
+    local server = assert(socket.create("inet", "dgram", "udp"))
+    local bind_addr = assert(socket.find_first_address_info("127.0.0.1", 0))
+    assert(server:bind(bind_addr))
+    assert(server:set_blocking(false))
 
     local ip, port = server:get_name()
     ok(port ~= nil, "should get server port")
 
-    local client = socket.create("inet", "dgram", "udp")
-    ok(client ~= nil, "should create client socket")
-    client:set_blocking(false)
-    local send_addr = socket.find_first_address_info("127.0.0.1", port)
-    ok(send_addr ~= nil, "should find send address")
+    local client = assert(socket.create("inet", "dgram", "udp"))
+    assert(client:set_blocking(false))
+    local send_addr = assert(socket.find_first_address_info("127.0.0.1", port))
 
-    local events = socket.poll(client, {"out"}, 100)
-    ok(events and events["out"], "client should be writable")
+    local events = assert(socket.poll(client, {"out"}, 100))
+    ok(events["out"], "client should be writable")
     client:send_to(send_addr, "ping")
 
     sleep(50)
 
-    events = socket.poll(server, {"in"}, 500)
-    ok(events and events["in"], "server should have data")
+    events = assert(socket.poll(server, {"in"}, 500))
+    ok(events["in"], "server should have data")
 
-    local data, addr = server:receive_from()
+    local data, addr = assert(server:receive_from())
     ok(data == "ping", "server should receive ping")
 
-    events = socket.poll(server, {"out"}, 100)
-    ok(events and events["out"], "server should be writable")
+    events = assert(socket.poll(server, {"out"}, 100))
+    ok(events["out"], "server should be writable")
     server:send_to(addr, "pong")
 
     sleep(50)
 
-    events = socket.poll(client, {"in"}, 500)
-    ok(events and events["in"], "client should have data")
+    events = assert(socket.poll(client, {"in"}, 500))
+    ok(events["in"], "client should have data")
 
-    data, addr = client:receive_from()
+    data, addr = assert(client:receive_from())
     ok(data == "pong", "client should receive pong")
 
     server:close()
@@ -281,27 +250,23 @@ test('Full UDP send/receive cycle with poll()', function()
 end)
 
 test('POLLIN on listening socket indicates accept readiness', function()
-    local server = socket.create("inet", "stream", "tcp")
-    ok(server ~= nil, "should create server socket")
-    local bind_addr = socket.find_first_address_info("127.0.0.1", 0)
-    ok(bind_addr ~= nil, "should find bind address")
-    server:bind(bind_addr)
-    server:listen(1)
-    server:set_blocking(false)
+    local server = assert(socket.create("inet", "stream", "tcp"))
+    local bind_addr = assert(socket.find_first_address_info("127.0.0.1", 0))
+    assert(server:bind(bind_addr))
+    assert(server:listen(1))
+    assert(server:set_blocking(false))
 
     local ip, port = server:get_name()
     ok(port ~= nil, "should get server port")
 
-    local client = socket.create("inet", "stream", "tcp")
-    ok(client ~= nil, "should create client socket")
-    local connect_addr = socket.find_first_address_info("127.0.0.1", port)
-    ok(connect_addr ~= nil, "should find connect address")
-    client:connect(connect_addr)
+    local client = assert(socket.create("inet", "stream", "tcp"))
+    local connect_addr = assert(socket.find_first_address_info("127.0.0.1", port))
+    assert(client:connect(connect_addr))
 
     sleep(50)
 
-    local events = socket.poll(server, {"in"}, 500)
-    ok(events and events["in"], "POLLIN should be set when connection pending")
+    local events = assert(socket.poll(server, {"in"}, 500))
+    ok(events["in"], "POLLIN should be set when connection pending")
 
     local conn = server:accept()
     ok(conn ~= nil, "accept should succeed when POLLIN set")
@@ -312,29 +277,26 @@ test('POLLIN on listening socket indicates accept readiness', function()
 end)
 
 test('poll() with -1 timeout waits indefinitely', function()
-    local sock = socket.create("inet", "dgram", "udp")
+    local sock = assert(socket.create("inet", "dgram", "udp"))
     ok(sock ~= nil, "should create socket")
     sock:set_blocking(false)
 
-    local sender = socket.create("inet", "dgram", "udp")
-    ok(sender ~= nil, "should create sender socket")
-    local bind_addr = socket.find_first_address_info("127.0.0.1", 0)
-    ok(bind_addr ~= nil, "should find bind address")
-    sock:bind(bind_addr)
+    local sender = assert(socket.create("inet", "dgram", "udp"))
+    local bind_addr = assert(socket.find_first_address_info("127.0.0.1", 0))
+    assert(sock:bind(bind_addr))
 
     local ip, port = sock:get_name()
     ok(port ~= nil, "should get socket port")
-    local send_addr = socket.find_first_address_info("127.0.0.1", port)
-    ok(send_addr ~= nil, "should find send address")
+    local send_addr = assert(socket.find_first_address_info("127.0.0.1", port))
 
-    sender:send_to(send_addr, "wake up")
+    assert(sender:send_to(send_addr, "wake up"))
     sleep(50)
 
     local start = get_time_ms()
-    local events = socket.poll(sock, {"in"}, -1)
+    local events = assert(socket.poll(sock, {"in"}, -1))
     local elapsed = get_time_ms() - start
 
-    ok(events and events["in"], "poll(-1) should detect data")
+    ok(events["in"], "poll(-1) should detect data")
     ok(elapsed < 5000, "poll(-1) should return when data available")
 
     sender:close()
@@ -342,30 +304,26 @@ test('poll() with -1 timeout waits indefinitely', function()
 end)
 
 test('Large UDP datagram handling with poll()', function()
-    local server = socket.create("inet", "dgram", "udp")
-    ok(server ~= nil, "should create server socket")
-    local bind_addr = socket.find_first_address_info("127.0.0.1", 0)
-    ok(bind_addr ~= nil, "should find bind address")
-    server:bind(bind_addr)
-    server:set_blocking(false)
+    local server = assert(socket.create("inet", "dgram", "udp"))
+    local bind_addr = assert(socket.find_first_address_info("127.0.0.1", 0))
+    assert(server:bind(bind_addr))
+    assert(server:set_blocking(false))
 
     local ip, port = server:get_name()
     ok(port ~= nil, "should get server port")
 
-    local client = socket.create("inet", "dgram", "udp")
-    ok(client ~= nil, "should create client socket")
-    local send_addr = socket.find_first_address_info("127.0.0.1", port)
-    ok(send_addr ~= nil, "should find send address")
+    local client = assert(socket.create("inet", "dgram", "udp"))
+    local send_addr = assert(socket.find_first_address_info("127.0.0.1", port))
 
     local large_data = string.rep("X", 1024)
 
-    client:send_to(send_addr, large_data)
+    assert(client:send_to(send_addr, large_data))
     sleep(50)
 
-    local events = socket.poll(server, {"in"}, 500)
-    ok(events and events["in"], "server should receive large datagram")
+    local events = assert(socket.poll(server, {"in"}, 500))
+    ok(events["in"], "server should receive large datagram")
 
-    local data = server:receive_from()
+    local data = assert(server:receive_from())
     ok(#data == 1024, "should receive full 1024 bytes")
     ok(data == large_data, "data should not be corrupted")
 
