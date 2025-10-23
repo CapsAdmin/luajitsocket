@@ -47,28 +47,18 @@ local loaders = {
 			uint32_t cbBlockSize;
 		}]])
 
-		ffi.cdef("int recv(uintptr_t, void*, int, int)")
-		ffi.cdef("int send(uintptr_t, const void*, int, int)")
-		ffi.cdef(
-			"uint32_t AcquireCredentialsHandleA(const char*, const char*, uint32_t, void*, void*, void*, void*, $*, $*)",
-			SecHandle,
-			SECURITY_INTEGER
-		)
-		ffi.cdef(
-			"uint32_t InitializeSecurityContextA($*, $*, const char*, uint32_t, uint32_t, uint32_t, $*, uint32_t, $*, $*, uint32_t*, $*)",
-			SecHandle,
-			SecHandle,
-			SecBufferDesc,
-			SecHandle,
-			SecBufferDesc,
-			SECURITY_INTEGER
-		)
-		ffi.cdef("uint32_t EncryptMessage($*, uint32_t, $*, uint32_t)", SecHandle, SecBufferDesc)
-		ffi.cdef("uint32_t DecryptMessage($*, $*, uint32_t, uint32_t*)", SecHandle, SecBufferDesc)
-		ffi.cdef("uint32_t DeleteSecurityContext($*)", SecHandle)
-		ffi.cdef("uint32_t FreeCredentialsHandle($*)", SecHandle)
-		ffi.cdef("uint32_t FreeContextBuffer(void*)")
-		ffi.cdef("uint32_t QueryContextAttributesA($*, uint32_t, void*)", SecHandle)
+		ffi.cdef[[
+			int recv(uintptr_t, void*, int, int);
+			int send(uintptr_t, const void*, int, int);
+			uint32_t AcquireCredentialsHandleA(const char*, const char*, uint32_t, void*, void*, void*, void*, void*, void*);
+			uint32_t InitializeSecurityContextA(void*, void*, const char*, uint32_t, uint32_t, uint32_t, void*, uint32_t, void*, void*, uint32_t*, void*);
+			uint32_t EncryptMessage(void*, uint32_t, void*, uint32_t);
+			uint32_t DecryptMessage(void*, void*, uint32_t, uint32_t*);
+			uint32_t DeleteSecurityContext(void*);
+			uint32_t FreeCredentialsHandle(void*);
+			uint32_t FreeContextBuffer(void*);
+			uint32_t QueryContextAttributesA(void*, uint32_t, void*);
+		]]
 		ffi.cdef([[
 		uint32_t FormatMessageA(
 			uint32_t dwFlags,
@@ -151,11 +141,11 @@ local loaders = {
 			return status_name
 		end
 
-		local SecHandle1 = ffi.typeof("$[1]", SecHandle)
-		local SECURITY_INTEGER1 = ffi.typeof("$[1]", SECURITY_INTEGER)
-		local hCreds = ffi.new(SecHandle1)
-		local hContext = ffi.new(SecHandle1)
-		local tsExpiry = ffi.new(SECURITY_INTEGER1)
+		local SecHandle_arr = ffi.typeof("$[1]", SecHandle)
+		local SECURITY_INTEGER_arr = ffi.typeof("$[1]", SECURITY_INTEGER)
+		local hCreds = ffi.new(SecHandle_arr)
+		local hContext = ffi.new(SecHandle_arr)
+		local tsExpiry = ffi.new(SECURITY_INTEGER_arr)
 		local state = "init"
 		local recv_buffer = ffi.new("uint8_t[?]", 65536)
 		local recv_len = 0
