@@ -56,3 +56,55 @@ test('TCP client sndtimeo blocking test', function()
     accepted:close()
     server:close()
 end)
+
+
+
+test('TCP client poll receive blocking test', function()
+    local sock = assert(socket.create("inet", "stream", "tcp"))
+    assert(sock:connect("httpbin.org", "http"))
+    assert(sock:send("GET /delay/10 HTTP/1.1\r\nHost: httpbin.org\r\n\r\n"))
+    assert(sock:set_blocking(false))
+    sock:poll(250, "in")
+    local res, err = sock:receive()
+    if res then
+        error("expected timeout error, got data")
+    end
+    eq(err, "timeout")
+end)
+
+test('TCP client poll send blocking test', function()
+    -- Create a server that accepts but never reads
+    local server = assert(socket.create("inet", "stream", "tcp"))
+    assert(server:set_option("reuseaddr", 1))
+    assert(server:bind("127.0.0.1", "0"))  -- bind to any available port
+    assert(server:listen(1))
+
+    local _, port = assert(server:get_name())
+
+    -- Connect a client
+    local client = assert(socket.create("inet", "stream", "tcp"))
+    assert(client:connect("127.0.0.1", tostring(port)))
+
+    -- Accept the connection but don't read from it
+    local accepted = assert(server:accept())
+
+    -- Set client to non-blocking mode so sends don't hang
+    assert(client:set_blocking(false))
+
+    -- Fill the send buffer completely
+    local large_data = string.rep("x", 65536)
+    for i = 1, 1000 do
+        local bytes, err = client:send(large_data)
+        if not bytes then
+            break  -- Buffer is full
+        end
+    end
+
+    -- Now poll should timeout because socket is not writable (buffer full)
+    local result = client:poll(250, "out")
+    eq(result, true)
+
+    client:close()
+    accepted:close()
+    server:close()
+end)
