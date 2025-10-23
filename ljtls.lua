@@ -1189,13 +1189,18 @@ local loaders = {
 local callbacks = {}
 
 function ssl.tls_client()
+	local errors = {}
 	for _, loader in ipairs(loaders) do
 		local success, result = pcall(loader)
 
-		if success then return result end
+		if success then 
+			return result 
+		else 
+			table.insert(errors, result) 
+		end
 	end
 
-	error("No SSL/TLS implementation available")
+	error("No SSL/TLS implementation available: " .. table.concat(errors, "\n\n"))
 end
 
 return ssl
